@@ -1,2 +1,1 @@
-# Newl-DRoom
-New L&amp;D Room Booking Tracker - Updated.
+A lightweight, single-file room booking system for managing training and conference rooms. Built with plain HTML/CSS/JS, backed by Google Sheets as the database. 

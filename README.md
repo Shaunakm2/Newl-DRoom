@@ -1,1 +1,1 @@
-A lightweight, single-file room booking system for managing training and conference rooms. Built with plain HTML/CSS/JS, backed by Google Sheets as the database. 
+A lightweight, room booking system for managing training and conference rooms.

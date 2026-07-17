@@ -58,97 +58,44 @@ let _sortField = 'datetime'; // 'datetime' | 'room' | 'booker' | 'status'
 let _sortDir = 'desc'; // 'asc' | 'desc'
 const PAGE_SIZE = 15; // bookings per page in admin table
 
-// ===== STORAGE =====
-const API_URL = 'https://script.google.com/macros/s/AKfycbyNtovF-0gWVS_FA-mWLAgIGejewOUuqrWuU4HegfwCCwd_KAZO45M0QnHC44Io-wm8Bg/exec';
+// ===== STORAGE (Supabase) =====
+const SUPABASE_URL = 'https://xgrwmwibfkuxzkuuidsh.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable__-SxyNxa9RJAZyW81_a27A_O_kv5Gl-';
+// TODO: set this to the email you used in Supabase → Authentication → Users → Add user
+const ADMIN_EMAIL = 'REPLACE_WITH_YOUR_ADMIN_EMAIL';
+
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+
+let _writeCompletedAt = 0;
+
+// Prevent loadData from wiping local optimistic updates right after a write.
+// Postgres commits are immediate, but a silent poll landing mid-render can
+// still feel like a flicker, so we keep the same short debounce as before.
+function _writeRecentlyCompleted() {
+  return (Date.now() - _writeCompletedAt) < 3000;
+}
 
 async function loadData(silent = false) {
-  // Don't overwrite local state with stale sheet data right after a write.
-  // Sheet takes 2-4s to commit; block silent refreshes for 10s after any write.
   if (silent && _writeRecentlyCompleted()) return;
   try {
     if (!silent) showLoadingOverlay(true);
-    const res = await fetch(API_URL);
-    const data = await res.json();
-    bookings = data.map(r => {
-
-      // Clean time: handle all Google Sheets time formats
-      const cleanTime = t => {
-        if (!t && t !== 0) return '00:00';
-        t = String(t).trim();
-        // Already HH:MM
-        if (/^\d{1,2}:\d{2}$/.test(t)) return t.padStart(5,'0');
-        // HH:MM:SS (24hr)
-        if (/^\d{1,2}:\d{2}:\d{2}$/.test(t)) return t.substring(0,5).padStart(5,'0');
-        // H:MM:SS AM/PM e.g. "1:44:00 PM"
-        const ampm = t.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)$/i);
-        if (ampm) {
-          let h = parseInt(ampm[1]);
-          const m = parseInt(ampm[2]);
-          const period = ampm[3].toUpperCase();
-          if (period === 'AM' && h === 12) h = 0;
-          if (period === 'PM' && h !== 12) h += 12;
-          return pad(h) + ':' + pad(m);
-        }
-        // Google Sheets time serial (fraction of day)
-        const num = parseFloat(t);
-        if (!isNaN(num) && num < 1) {
-          const totalMins = Math.round(num * 24 * 60);
-          const h = Math.floor(totalMins / 60) % 24;
-          const m = totalMins % 60;
-          return pad(h) + ':' + pad(m);
-        }
-        return '00:00';
-      };
-      // Clean date: handle all Google Sheets date formats
-      const cleanDate = d => {
-        if (!d) return '';
-        d = String(d).trim();
-        // Already YYYY-MM-DD
-        if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
-        // ISO datetime e.g. "2026-05-20T00:00:00.000Z"
-        if (/^\d{4}-\d{2}-\d{2}T/.test(d)) return d.substring(0, 10);
-        // Slash-separated: treat as DD/MM/YYYY (Indian locale default in Sheets)
-        if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(d)) {
-          const p = d.split('/');
-          // If first segment > 12, must be day (DD/MM/YYYY)
-          // Otherwise assume DD/MM/YYYY (Indian default)
-          return p[2] + '-' + p[1].padStart(2,'0') + '-' + p[0].padStart(2,'0');
-        }
-        // DD-Mon-YYYY e.g. "20-May-2026"
-        const months = {jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12'};
-        const monMatch = d.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{4})$/);
-        if (monMatch) {
-          const mo = months[monMatch[2].toLowerCase()] || '01';
-          return monMatch[3] + '-' + mo + '-' + monMatch[1].padStart(2,'0');
-        }
-        // Google Sheets date serial
-        const num = parseFloat(d);
-        if (!isNaN(num) && num > 1000) {
-          const epoch = new Date(1899, 11, 30).getTime();
-          const dateObj = new Date(epoch + num * 86400000);
-          return localDateStr(dateObj);
-        }
-        return d;
-      };
-      return {
-        id: String(r.BookingID || '').trim(),
-        room: String(r.Room || '').trim(),
-        booker: String(r.BookedBy || '').trim(),
-        purpose: String(r.Purpose || '').trim(),
-        date: cleanDate(r.BookingDate),
-        start: cleanTime(r.StartTime),
-        end: cleanTime(r.EndTime),
-        attendees: String(r.Attendees || '').trim(),
-        status: String(r.Status || 'Confirmed').trim(),
-        endDate: cleanDate(r.EndDate || ''),
-        conflictResolved: String(r.ConflictResolved || '').trim() === 'Yes',
-        conflictNote: String(r.ConflictNote || '').trim()
-      };
-    });
-    // Sort by creation time (embedded in BookingID as 'b' + timestamp + random).
-    // String comparison, not parseInt — see note in renderTable()'s sort for why
-    // parseInt without a radix silently fails on every real ID here (they start
-    // with a letter), which made this a complete no-op previously.
+    const { data, error } = await supabase.from('bookings').select('*');
+    if (error) throw error;
+    bookings = (data || []).map(r => ({
+      id: String(r.booking_id || '').trim(),
+      room: String(r.room || '').trim(),
+      booker: String(r.booked_by || '').trim(),
+      purpose: String(r.purpose || '').trim(),
+      date: String(r.booking_date || '').trim(),               // Postgres date -> 'YYYY-MM-DD'
+      start: String(r.start_time || '00:00:00').trim().substring(0,5),  // 'HH:MM:SS' -> 'HH:MM'
+      end: String(r.end_time || '00:00:00').trim().substring(0,5),
+      attendees: r.attendees != null ? String(r.attendees) : '',
+      status: String(r.status || 'Confirmed').trim(),
+      endDate: String(r.end_date || '').trim(),
+      conflictResolved: !!r.conflict_resolved,
+      conflictNote: String(r.conflict_note || '').trim()
+    }));
+    // Sort by creation time (embedded in booking_id as 'b' + base36 timestamp + random).
     bookings.sort((a, b) => {
       const ta = a.id || '';
       const tb = b.id || '';
@@ -163,66 +110,94 @@ async function loadData(silent = false) {
   }
 }
 
-let _writeCompletedAt = 0;
-
-async function apiPost(payload) {
-  try {
-    payload._token = _sessionToken; // server validates this on every write
-    await fetch(API_URL, {
-      method: 'POST',
-      mode: 'no-cors',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify(payload)
-    });
-    _writeCompletedAt = Date.now();
-  } catch(e) {
-    console.error('apiPost failed:', e);
-    throw e;
-  }
-}
-
-// Prevent loadData from wiping local changes before sheet has committed.
-// Apps Script can take 2-4s to write. Block silent refreshes for 10s after a write.
-function _writeRecentlyCompleted() {
-  return (Date.now() - _writeCompletedAt) < 10000;
-}
-
 async function apiCreate(b) {
   const endDate = b.endDate || (isOvernight(b) ? addDaysStr(b.date, 1) : b.date);
-  await apiPost({ action: 'create', BookingID: b.id, Room: b.room, BookedBy: b.booker, Purpose: b.purpose || '', BookingDate: b.date, StartTime: b.start, EndTime: b.end, Attendees: b.attendees || '', Status: b.status || 'Confirmed', EndDate: endDate });
+  const { error } = await supabase.from('bookings').insert({
+    booking_id: b.id, room: b.room, booked_by: b.booker, purpose: b.purpose || '',
+    booking_date: b.date, start_time: b.start, end_time: b.end,
+    attendees: b.attendees || null, status: b.status || 'Confirmed', end_date: endDate
+  });
+  if (error) throw error;
+  _writeCompletedAt = Date.now();
 }
 
 async function apiUpdateStatus(id, status) {
-  await apiPost({ action: 'updateStatus', BookingID: id, Status: status });
+  const { error } = await supabase.from('bookings').update({ status }).eq('booking_id', id);
+  if (error) throw error;
+  _writeCompletedAt = Date.now();
 }
 
 async function apiSetConflictResolved(id, resolved, note) {
-  await apiPost({ action: 'setConflictResolved', BookingID: id, Resolved: resolved, Note: note || '' });
+  const { error } = await supabase.from('bookings')
+    .update({ conflict_resolved: !!resolved, conflict_note: note || '' })
+    .eq('booking_id', id);
+  if (error) throw error;
+  _writeCompletedAt = Date.now();
 }
 
-// Batch variants — used for recurring bookings and bulk admin actions so the
-// server sends ONE combined Teams notification instead of one per row.
+// Batch variants — used for recurring bookings and bulk admin actions. A single
+// insert/update call for the whole batch, same as the old combined-notification design.
 async function apiCreateRequestBatch(bookingsArr) {
-  const bookings = bookingsArr.map(b => {
+  const rows = bookingsArr.map(b => {
     const endDate = b.endDate || (isOvernight(b) ? addDaysStr(b.date, 1) : b.date);
-    return { BookingID: b.id, Room: b.room, BookedBy: b.booker, Purpose: b.purpose || '', BookingDate: b.date, StartTime: b.start, EndTime: b.end, Attendees: b.attendees || '', EndDate: endDate };
+    return {
+      booking_id: b.id, room: b.room, booked_by: b.booker, purpose: b.purpose || '',
+      booking_date: b.date, start_time: b.start, end_time: b.end,
+      attendees: b.attendees || null, status: 'Pending', end_date: endDate
+    };
   });
-  await apiPost({ action: 'createRequestBatch', bookings });
+  const { error } = await supabase.from('bookings').insert(rows);
+  if (error) throw error;
+  _writeCompletedAt = Date.now();
 }
 
 async function apiUpdateStatusBatch(ids, status) {
-  await apiPost({ action: 'updateStatusBatch', BookingIDs: ids, Status: status });
+  const { error } = await supabase.from('bookings').update({ status }).in('booking_id', ids);
+  if (error) throw error;
+  _writeCompletedAt = Date.now();
 }
 
 async function apiUpdate(b) {
+  // Postgres updates are transactional and immediate, so — unlike the old
+  // Apps Script version — this is a single UPDATE, no delete-then-recreate
+  // dance and no artificial 1.5s wait for eventual consistency.
   const endDate = b.endDate || (isOvernight(b) ? addDaysStr(b.date, 1) : b.date);
-  await apiPost({ action: 'delete', BookingID: b.id, silent: true });
-  await new Promise(r => setTimeout(r, 1500));
-  await apiPost({ action: 'create', BookingID: b.id, Room: b.room, BookedBy: b.booker, Purpose: b.purpose || '', BookingDate: b.date, StartTime: b.start, EndTime: b.end, Attendees: b.attendees || '', Status: b.status || 'Confirmed', EndDate: endDate, ConflictResolved: b.conflictResolved ? 'Yes' : '', ConflictNote: b.conflictNote || '', isUpdate: true });
+  const { error } = await supabase.from('bookings').update({
+    room: b.room, booked_by: b.booker, purpose: b.purpose || '',
+    booking_date: b.date, start_time: b.start, end_time: b.end,
+    attendees: b.attendees || null, status: b.status || 'Confirmed', end_date: endDate,
+    conflict_resolved: !!b.conflictResolved, conflict_note: b.conflictNote || ''
+  }).eq('booking_id', b.id);
+  if (error) throw error;
+  _writeCompletedAt = Date.now();
 }
 
 async function apiDelete(id) {
-  await apiPost({ action: 'delete', BookingID: id });
+  const { error } = await supabase.from('bookings').delete().eq('booking_id', id);
+  if (error) throw error;
+  _writeCompletedAt = Date.now();
+}
+
+// Public self-service actions. These call SECURITY DEFINER Postgres functions
+// that re-verify the name match server-side (see supabase/schema.sql) — the
+// anon key alone cannot cancel/edit someone else's booking even if the
+// client-side check below is bypassed.
+async function apiCancelOwn(id, bookerName) {
+  const { data, error } = await supabase.rpc('cancel_own_booking', {
+    p_booking_id: id, p_booker_name: bookerName
+  });
+  if (error) throw error;
+  if (!data.ok) throw new Error(data.error);
+  _writeCompletedAt = Date.now();
+}
+
+async function apiReleaseOwn(id, bookerName, endTime, endDate) {
+  const { data, error } = await supabase.rpc('release_own_booking', {
+    p_booking_id: id, p_booker_name: bookerName, p_end_time: endTime, p_end_date: endDate
+  });
+  if (error) throw error;
+  if (!data.ok) throw new Error(data.error);
+  _writeCompletedAt = Date.now();
 }
 
 function showLoadingOverlay(show) {
@@ -1033,9 +1008,8 @@ async function submitBooking(e) {
     try {
       showLoadingOverlay(true);
       // Delete original booking
-      await apiPost({ action: 'delete', BookingID: id, silent: true });
+      await apiDelete(id);
       bookings = bookings.filter(b => b.id !== id);
-      await new Promise(r => setTimeout(r, 1000));
       // Create new bookings for each date
       for (const d of dates) {
         const computedEndDate = minutesSinceMidnight(end) < minutesSinceMidnight(start) ? addDaysStr(d, 1) : d;
@@ -1118,7 +1092,8 @@ function requireAdmin() {
   }
 }
 
-function doLogout() {
+async function doLogout() {
+  await supabase.auth.signOut();
   adminLoggedIn = false;
   _sessionToken = null;
   document.getElementById('logout-btn').style.display = 'none';
@@ -1140,19 +1115,16 @@ async function doLogin() {
 
   try {
     showLoadingOverlay(true);
-    const msgBuffer = new TextEncoder().encode(pw);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-    const params = new URLSearchParams({ data: JSON.stringify({ action: 'verifyAdmin', passwordHash: hashHex }) });
-    const res = await fetch(API_URL + '?' + params.toString());
-    const data = await res.json();
-    if (data.ok) {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: ADMIN_EMAIL,
+      password: pw
+    });
+    if (!error && data.session) {
       _loginAttempts = 0;
       _loginLockedUntil = 0;
       _lastActivityAt = Date.now();
       adminLoggedIn = true;
-      _sessionToken = data.token;
+      _sessionToken = data.session.access_token; // kept for compatibility with UI code that checks this is set
       document.getElementById('logout-btn').style.display = '';
       document.getElementById('login-modal').style.display = 'none';
       document.getElementById('login-pw').value = '';
@@ -1501,14 +1473,12 @@ async function modifyAndApprove(id) {
   if (minutesSinceMidnight(end) === minutesSinceMidnight(start)) { toast('Start and end time cannot be the same.', true); return; }
   const conflict = findConflict(room, date, start, end, id);
   if (conflict) { if (!(await showConfirmModal(`⚠️ Conflict: ${roomName(room)} is booked ${fmtTime(conflict.start)}–${fmtTime(conflict.end)} by ${conflict.booker}.\n\nApprove anyway?`, 'Approve Anyway', 'btn-modify'))) return; }
-  const b = { ...bookings[idx], room, date, start, end, attendees: attendees||'', status: 'Confirmed' };
+  const modEndDate = minutesSinceMidnight(end) < minutesSinceMidnight(start) ? addDaysStr(date, 1) : date;
+  const b = { ...bookings[idx], room, date, start, end, attendees: attendees||'', status: 'Confirmed', endDate: modEndDate };
   try {
     showLoadingOverlay(true);
     bookings[idx] = b;
-    await apiPost({ action: 'delete', BookingID: b.id, silent: true });
-    await new Promise(r => setTimeout(r, 1500));
-    const modEndDate = minutesSinceMidnight(b.end) < minutesSinceMidnight(b.start) ? addDaysStr(b.date, 1) : b.date;
-    await apiPost({ action: 'create', BookingID: b.id, Room: b.room, BookedBy: b.booker, Purpose: b.purpose||'', BookingDate: b.date, StartTime: b.start, EndTime: b.end, Attendees: b.attendees, Status: 'Confirmed', EndDate: modEndDate, ConflictResolved: b.conflictResolved ? 'Yes' : '', ConflictNote: b.conflictNote || '', isUpdate: true });
+    await apiUpdate(b);
     toast('Booking modified & approved ✅');
   } catch(e) { toast('Error updating booking.', true); }
   finally { showLoadingOverlay(false); }
@@ -1682,11 +1652,11 @@ async function bulkCancel() {
   if (!(await showConfirmModal(`Cancel ${ids.length} booking(s)?`, 'Cancel Bookings', 'btn-danger'))) return;
   showLoadingOverlay(true);
   try {
-    for (const id of ids) {
-      await apiPost({ action: 'cancel', BookingID: id });
+    await apiUpdateStatusBatch(ids, 'Cancelled');
+    ids.forEach(id => {
       const idx = bookings.findIndex(b => b.id === id);
       if (idx !== -1) bookings[idx].status = 'Cancelled';
-    }
+    });
     toast(`${ids.length} booking(s) cancelled.`);
   } catch(e) { toast('Error during bulk cancel.', true); }
   finally { showLoadingOverlay(false); }
@@ -2108,14 +2078,14 @@ async function confirmCancelOrRelease() {
       // overnight booking, on its continuation day after midnight.
       const now = new Date();
       const nowHHMM = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+      await apiReleaseOwn(b.id, entered, nowHHMM + ':00', todayStr());
       b.end = nowHHMM;
       b.endDate = todayStr();
-      await apiUpdate(b);
       closeCancelModal();
       toast('Room released — now available.');
     } else {
-      // Mark as Cancelled in sheet — keeps record
-      await apiPost({ action: 'cancel', BookingID: _cancelBookingId });
+      // Mark as Cancelled — server re-verifies the name match, keeps record
+      await apiCancelOwn(_cancelBookingId, entered);
       const idx = bookings.findIndex(x => x.id === _cancelBookingId);
       if (idx !== -1) bookings[idx].status = 'Cancelled';
       closeCancelModal();

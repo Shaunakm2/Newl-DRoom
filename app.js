@@ -62,7 +62,7 @@ const PAGE_SIZE = 15; // bookings per page in admin table
 const SUPABASE_URL = 'https://xgrwmwibfkuxzkuuidsh.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable__-SxyNxa9RJAZyW81_a27A_O_kv5Gl-';
 // TODO: set this to the email you used in Supabase → Authentication → Users → Add user
-const ADMIN_EMAIL = 'REPLACE_WITH_YOUR_ADMIN_EMAIL';
+const ADMIN_EMAIL = 'shaunakmistry4@gmail.com';
 
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 

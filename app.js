@@ -64,7 +64,7 @@ const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable__-SxyNxa9RJAZyW81_a27A_O_kv5Gl-
 // TODO: set this to the email you used in Supabase → Authentication → Users → Add user
 const ADMIN_EMAIL = 'shaunakmistry4@gmail.com';
 
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 
 let _writeCompletedAt = 0;
 

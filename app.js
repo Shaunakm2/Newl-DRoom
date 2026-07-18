@@ -1879,7 +1879,7 @@ function openSchedModal(roomId) {
     const todayTag = isToday ? ' &mdash; Today' : '';
     const weekendTag = isWeekend ? ' <span style="color:var(--text-faint);font-weight:400">(Weekend)</span>' : '';
 
-    html += '<div class="sched-day-group">' +
+    html += '<div class="sched-day-group"' + (isToday ? ' id="sched-day-today"' : '') + '>' +
       '<div class="' + labelClass + '">' + dayName + todayTag + weekendTag + '</div>' +
       dayHtml +
     '</div>';
@@ -1887,6 +1887,14 @@ function openSchedModal(roomId) {
 
   body.innerHTML = html;
   document.getElementById('sched-modal').style.display = 'flex';
+
+  // Open scrolled to today, not 60 days back — past data is one scroll up
+  // away, future data one scroll down, but today is what you want first.
+  // Deferred a tick so layout has settled after display:none -> flex.
+  setTimeout(() => {
+    const todayEl = document.getElementById('sched-day-today');
+    if (todayEl) todayEl.scrollIntoView({ block: 'start' });
+  }, 0);
 }
 
 function closeSchedModal() {
@@ -2136,7 +2144,8 @@ async function confirmCancelOrRelease() {
       renderTable(); renderActiveNow(); renderPendingRequests();
     }
   } catch(e) {
-    toast('Error — please try again.', true);
+    console.error('Cancel/Release error:', e);
+    toast('Error: ' + (e.message || 'please try again.'), true);
   } finally {
     showLoadingOverlay(false);
   }

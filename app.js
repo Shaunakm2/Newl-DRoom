@@ -79,9 +79,22 @@ async function loadData(silent = false) {
   if (silent && _writeRecentlyCompleted()) return;
   try {
     if (!silent) showLoadingOverlay(true);
-    const { data, error } = await supabase.from('bookings').select('*');
-    if (error) throw error;
-    bookings = (data || []).map(r => ({
+    // Supabase/PostgREST caps a single select('*') at 1000 rows by default,
+    // silently — no error, just a truncated result. As the table grows past
+    // that (recurring bookings, bulk historical imports, etc.), some rows
+    // would quietly stop being fetched at all. Paginate with .range() so
+    // every row always loads, no matter how large the table gets.
+    const pageSize = 1000;
+    let allRows = [];
+    let from = 0;
+    while (true) {
+      const { data, error } = await supabase.from('bookings').select('*').range(from, from + pageSize - 1);
+      if (error) throw error;
+      allRows = allRows.concat(data || []);
+      if (!data || data.length < pageSize) break; // last page was partial (or empty) — done
+      from += pageSize;
+    }
+    bookings = allRows.map(r => ({
       id: String(r.booking_id || '').trim(),
       room: String(r.room || '').trim(),
       booker: String(r.booked_by || '').trim(),
@@ -1822,7 +1835,10 @@ function openSchedModal(roomId) {
   today.setHours(0,0,0,0);
   let html = '';
 
-  for (let i = 0; i < 30; i++) {
+  const PAST_DAYS = 60;   // how far back to show
+  const FUTURE_DAYS = 30; // how far forward to show
+
+  for (let i = -PAST_DAYS; i < FUTURE_DAYS; i++) {
     const d = new Date(today);
     d.setDate(today.getDate() + i);
     const ds = localDateStr(d);

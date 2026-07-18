@@ -123,7 +123,24 @@ async function loadData(silent = false) {
   }
 }
 
-async function apiCreate(b) {
+// ===== TEAMS NOTIFICATIONS =====
+// Fire-and-forget calls to the teams-notify Edge Function. Never awaited by
+// callers in a way that blocks the booking action, and never throws outward —
+// a Teams outage should never be able to break an actual booking.
+const TEAMS_NOTIFY_URL = SUPABASE_URL + '/functions/v1/teams-notify';
+
+function notifyTeams(payload) {
+  fetch(TEAMS_NOTIFY_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + SUPABASE_PUBLISHABLE_KEY
+    },
+    body: JSON.stringify(payload)
+  }).catch(e => console.error('Teams notify failed (non-blocking):', e));
+}
+
+async function apiCreate(b, silent) {
   const endDate = b.endDate || (isOvernight(b) ? addDaysStr(b.date, 1) : b.date);
   const { error } = await supabase.from('bookings').insert({
     booking_id: b.id, room: b.room, booked_by: b.booker, purpose: b.purpose || '',
@@ -132,12 +149,27 @@ async function apiCreate(b) {
   });
   if (error) throw error;
   _writeCompletedAt = Date.now();
+  if (!silent) {
+    notifyTeams({
+      event: (b.status || 'Confirmed') === 'Pending' ? 'newRequest' : 'newConfirmed',
+      room: roomName(b.room), bookedBy: b.booker, purpose: displayPurpose(b.purpose) || '',
+      date: fmtDate(b.date), start: fmtTime(b.start), end: fmtTime(b.end)
+    });
+  }
 }
 
 async function apiUpdateStatus(id, status) {
+  const before = bookings.find(x => x.id === id);
   const { error } = await supabase.from('bookings').update({ status }).eq('booking_id', id);
   if (error) throw error;
   _writeCompletedAt = Date.now();
+  if (status === 'Confirmed' && before) {
+    notifyTeams({
+      event: 'approved',
+      room: roomName(before.room), bookedBy: before.booker, purpose: displayPurpose(before.purpose) || '',
+      date: fmtDate(before.date), start: fmtTime(before.start), end: fmtTime(before.end)
+    });
+  }
 }
 
 async function apiSetConflictResolved(id, resolved, note) {
@@ -162,15 +194,27 @@ async function apiCreateRequestBatch(bookingsArr) {
   const { error } = await supabase.from('bookings').insert(rows);
   if (error) throw error;
   _writeCompletedAt = Date.now();
+
+  const first = bookingsArr[0], last = bookingsArr[bookingsArr.length - 1];
+  const dayLabel = bookingsArr.length > 1 ? (bookingsArr.length + ' days, ') : '';
+  const dateRange = first.date === last.date ? fmtDate(first.date) : (fmtDate(first.date) + ' to ' + fmtDate(last.date));
+  notifyTeams({
+    event: bookingsArr.length > 1 ? 'newRecurringRequest' : 'newRequest',
+    room: roomName(first.room), bookedBy: first.booker, purpose: displayPurpose(first.purpose) || '',
+    dayLabel, dateRange, start: fmtTime(first.start), end: fmtTime(first.end)
+  });
 }
 
 async function apiUpdateStatusBatch(ids, status) {
   const { error } = await supabase.from('bookings').update({ status }).in('booking_id', ids);
   if (error) throw error;
   _writeCompletedAt = Date.now();
+  if (status === 'Confirmed') {
+    notifyTeams({ event: 'batchApproved', count: ids.length });
+  }
 }
 
-async function apiUpdate(b) {
+async function apiUpdate(b, silent) {
   // Postgres updates are transactional and immediate, so — unlike the old
   // Apps Script version — this is a single UPDATE, no delete-then-recreate
   // dance and no artificial 1.5s wait for eventual consistency.
@@ -183,12 +227,27 @@ async function apiUpdate(b) {
   }).eq('booking_id', b.id);
   if (error) throw error;
   _writeCompletedAt = Date.now();
+  if (!silent) {
+    notifyTeams({
+      event: 'modified',
+      room: roomName(b.room), bookedBy: b.booker, purpose: displayPurpose(b.purpose) || '',
+      date: fmtDate(b.date), start: fmtTime(b.start), end: fmtTime(b.end)
+    });
+  }
 }
 
-async function apiDelete(id) {
+async function apiDelete(id, silent) {
+  const b = bookings.find(x => x.id === id);
   const { error } = await supabase.from('bookings').delete().eq('booking_id', id);
   if (error) throw error;
   _writeCompletedAt = Date.now();
+  if (!silent && b) {
+    notifyTeams({
+      event: 'deletedOrRejected',
+      room: roomName(b.room), bookedBy: b.booker, purpose: displayPurpose(b.purpose) || '',
+      date: fmtDate(b.date), start: fmtTime(b.start), end: fmtTime(b.end)
+    });
+  }
 }
 
 // Public self-service actions. These call SECURITY DEFINER Postgres functions
@@ -1029,16 +1088,25 @@ async function submitBooking(e) {
     }
     try {
       showLoadingOverlay(true);
-      // Delete original booking
-      await apiDelete(id);
+      // Delete original booking (silent — this is an internal step of one
+      // "modify recurring series" action, not a real deletion to notify about)
+      await apiDelete(id, true);
       bookings = bookings.filter(b => b.id !== id);
-      // Create new bookings for each date
+      // Create new bookings for each date (also silent — one combined
+      // notification below instead of one per date)
       for (const d of dates) {
         const computedEndDate = minutesSinceMidnight(end) < minutesSinceMidnight(start) ? addDaysStr(d, 1) : d;
         const booking = { id: genId(), room, booker, purpose, date: d, start, end, attendees: attendees || '', status: 'Confirmed', endDate: computedEndDate };
         bookings.push(booking);
-        await apiCreate(booking);
+        await apiCreate(booking, true);
       }
+      const dRange = dates.length > 1 ? (fmtDate(dates[0]) + ' to ' + fmtDate(dates[dates.length-1])) : fmtDate(dates[0]);
+      notifyTeams({
+        event: 'modified',
+        room: roomName(room), bookedBy: booker, purpose: displayPurpose(purpose) || '',
+        dayLabel: dates.length > 1 ? (dates.length + ' days, ') : '', dateRange: dRange,
+        start: fmtTime(start), end: fmtTime(end)
+      });
       toast(`Booking updated across ${dates.length} date(s).`);
     } catch(err) { toast('Error saving. Try again.', true); } finally { showLoadingOverlay(false); }
     resetForm(); renderTable(); renderActiveNow(); renderStatusGrid();
@@ -1063,8 +1131,15 @@ async function submitBooking(e) {
         const computedEndDate = minutesSinceMidnight(end) < minutesSinceMidnight(start) ? addDaysStr(d, 1) : d;
         const booking = { id: genId(), room, booker, purpose, date: d, start, end, attendees: attendees || '', status: 'Confirmed', endDate: computedEndDate };
         bookings.push(booking);
-        await apiCreate(booking);
+        await apiCreate(booking, true);
       }
+      const dRange = dates.length > 1 ? (fmtDate(dates[0]) + ' to ' + fmtDate(dates[dates.length-1])) : fmtDate(dates[0]);
+      notifyTeams({
+        event: dates.length > 1 ? 'newRecurringConfirmed' : 'newConfirmed',
+        room: roomName(room), bookedBy: booker, purpose: displayPurpose(purpose) || '',
+        dayLabel: dates.length > 1 ? (dates.length + ' days, ') : '', dateRange: dRange,
+        start: fmtTime(start), end: fmtTime(end)
+      });
       toast(dates.length === 1 ? 'Room booked successfully.' : `${dates.length} recurring bookings created (Mon–Fri).`);
     } catch(err) { toast('Error saving. Try again.', true); } finally { showLoadingOverlay(false); }
     resetForm(); renderTable(); renderActiveNow(); renderStatusGrid();

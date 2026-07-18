@@ -1750,6 +1750,19 @@ window.addEventListener('beforeunload', e => {
 
 // ===== INIT =====
 async function init() {
+  // Supabase Auth persists the session in the browser automatically, but our
+  // own adminLoggedIn flag is just an in-memory JS variable that resets on
+  // every reload. Check for an existing valid session here so a refresh
+  // doesn't silently log the admin out.
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) {
+      adminLoggedIn = true;
+      _sessionToken = session.access_token;
+      document.getElementById('logout-btn').style.display = '';
+    }
+  } catch(e) { console.error('Session restore failed', e); }
+
   populateRoomSelects();
   document.getElementById('f-date').value = todayStr();
   updateClock();

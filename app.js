@@ -718,16 +718,15 @@ function renderStatusGrid() {
 }
 
 // ===== ADMIN TABLE =====
-function renderTable() {
-  if (!_tablePageLocked) _tablePage = 0;
-  const tbody = document.getElementById('table-body');
+// Shared by renderTable() and exportExcel() so the export always matches
+// exactly what's currently visible in the table — no separate filter logic
+// to keep in sync in two places.
+function getFilteredBookings() {
   const search = document.getElementById('search-input').value.toLowerCase().trim();
   const filterRoom = document.getElementById('filter-room').value;
   const filterDate = document.getElementById('filter-date').value;
   const conflictsOnly = document.getElementById('filter-conflicts-only')?.checked;
   const today = todayStr();
-  // Preserve current selection across re-render
-  const prevSelected = new Set(getSelectedIds());
 
   let filtered = [...bookings];
   if (conflictsOnly) filtered = filtered.filter(b => (b.status === 'Pending' || b.status === 'Confirmed') && getLiveConflicts(b).length > 0);
@@ -743,6 +742,16 @@ function renderTable() {
   if (filterDate === 'today') filtered = filtered.filter(b => b.date === today);
   else if (filterDate === 'upcoming') filtered = filtered.filter(b => bookingTimeStatus(b) !== 'past');
   else if (filterDate === 'past') filtered = filtered.filter(b => bookingTimeStatus(b) === 'past');
+  return filtered;
+}
+
+function renderTable() {
+  if (!_tablePageLocked) _tablePage = 0;
+  const tbody = document.getElementById('table-body');
+  // Preserve current selection across re-render
+  const prevSelected = new Set(getSelectedIds());
+
+  let filtered = getFilteredBookings();
 
   // Sort
   filtered.sort((a, b) => {
@@ -2440,7 +2449,8 @@ function launchConfetti() {
 // ===== EXPORT EXCEL =====
 function exportExcel() {
   const headers = ['Room','Floor','Booked By','Purpose','Date','Start Time','End Time','Attendees','Status','Conflict Note'];
-  const rows = [...bookings].sort((a,b) => {
+  const filteredBookings = getFilteredBookings();
+  const rows = [...filteredBookings].sort((a,b) => {
     const da = a.date + a.start, db = b.date + b.start;
     return da < db ? -1 : da > db ? 1 : 0;
   }).map(b => {
@@ -2470,12 +2480,32 @@ function exportExcel() {
     toast('Loading Excel library, please try again in a moment.', true);
     return;
   }
+  if (rows.length === 0) {
+    toast('No bookings match the current filters — nothing to export.', true);
+    return;
+  }
   const ws = XLSX.utils.json_to_sheet(rows, { header: headers });
   ws['!cols'] = [20,18,22,28,14,14,14,12,12,30].map(w => ({ wch: w }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Room Bookings');
-  XLSX.writeFile(wb, 'room-bookings-' + todayStr() + '.xlsx');
-  toast('Excel file downloaded.');
+
+  // Reflect the active filters in the filename, so a filtered export is
+  // recognizable at a glance (e.g. room-bookings-chanakya-upcoming-2026-07-18.xlsx)
+  const filterRoom = document.getElementById('filter-room').value;
+  const filterDate = document.getElementById('filter-date').value;
+  const search = document.getElementById('search-input').value.trim();
+  const conflictsOnly = document.getElementById('filter-conflicts-only')?.checked;
+  const parts = ['room-bookings'];
+  if (filterRoom) parts.push(filterRoom);
+  if (filterDate) parts.push(filterDate);
+  if (conflictsOnly) parts.push('conflicts');
+  if (search) parts.push(search.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 20));
+  parts.push(todayStr());
+  const filename = parts.filter(Boolean).join('-') + '.xlsx';
+
+  XLSX.writeFile(wb, filename);
+  const filterActive = filterRoom || filterDate || conflictsOnly || search;
+  toast(filterActive ? `Exported ${rows.length} filtered booking(s).` : `Exported ${rows.length} booking(s).`);
 }
 
 init();

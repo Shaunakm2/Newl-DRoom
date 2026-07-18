@@ -485,16 +485,22 @@ function getRoomStatus(roomId) {
   const now = nowMinutes();
   const relevant = bookings.filter(b => b.room === roomId && (b.status === 'Confirmed' || !b.status));
 
-  // Find a booking that's active right now (today, or spilling over from yesterday)
-  let activeBooking = null, activeInfo = null;
+  // Collect EVERY booking active right now (today, or spilling over from
+  // yesterday) — a room can legitimately have more than one at once when an
+  // admin has marked an overlap as a resolved conflict (e.g. two trainers
+  // sharing the same room), so we no longer stop at the first match.
+  const activeList = [];
   for (const b of relevant) {
     const info = activeSpanInfo(b);
-    if (info) { activeBooking = b; activeInfo = info; break; }
+    if (info) activeList.push({ booking: b, info });
   }
+  activeList.sort((a, c) => (a.info.total - a.info.elapsed) - (c.info.total - c.info.elapsed)); // soonest-ending first
+
+  const activeIds = new Set(activeList.map(a => a.booking.id));
 
   // Helper: bookings with a span starting later today (after now)
   const upcomingToday = relevant
-    .filter(b => b !== activeBooking)
+    .filter(b => !activeIds.has(b.id))
     .map(b => {
       const sp = bookingSpans(b).find(s => s.date === today && s.start > now);
       return sp ? { b, start: sp.start } : null;
@@ -503,21 +509,19 @@ function getRoomStatus(roomId) {
     .sort((a, c) => a.start - c.start)
     .map(x => x.b);
 
-  if (activeBooking) {
-    const remaining = activeInfo.total - activeInfo.elapsed;
-    const pct = Math.min(100, Math.round((activeInfo.elapsed / activeInfo.total) * 100));
+  if (activeList.length > 0) {
+    const remaining = activeList[0].info.total - activeList[0].info.elapsed; // soonest of the concurrent bookings
     return {
       status: remaining <= 30 ? 'soon' : 'occupied',
-      booking: activeBooking,
+      activeBookings: activeList,
       remaining,
-      pct,
       nextBookings: upcomingToday
     };
   }
 
   return {
     status: 'free',
-    booking: null,
+    activeBookings: [],
     remaining: null,
     pct: 0,
     nextBookings: upcomingToday.slice(0, 1)
@@ -537,7 +541,7 @@ function renderStatusGrid() {
 
   for (const room of ROOMS) {
     if (floorFilter && room.floor !== floorFilter) continue;
-    const { status, booking, remaining, pct, nextBookings } = getRoomStatus(room.id);
+    const { status, activeBookings, remaining, nextBookings } = getRoomStatus(room.id);
     if (status === 'free') freeCount++;
     else if (status === 'occupied') occCount++;
     else soonCount++;
@@ -557,33 +561,38 @@ function renderStatusGrid() {
     const roomShadow = roomColor + '18';
 
     let bodyHtml = '';
-    if (booking) {
-      const mins = remaining;
-      const freeAt = fmtTime(booking.end);
-      bodyHtml += `
-        <div class="room-info-row">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-          <span class="room-booker">${escHtml(booking.booker)}</span>
-        </div>`;
-      if (booking.purpose) {
+    if (activeBookings && activeBookings.length > 0) {
+      activeBookings.forEach(({ booking, info }, idx) => {
+        const mins = info.total - info.elapsed;
+        const bPct = Math.min(100, Math.round((info.elapsed / info.total) * 100));
+        const bBarClass = mins <= 30 ? 'warn' : '';
+        const freeAt = fmtTime(booking.end);
+        if (idx > 0) bodyHtml += `<hr class="divider" style="margin:10px 0;">`;
+        bodyHtml += `
+          <div class="room-info-row">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            <span class="room-booker">${escHtml(booking.booker)}</span>
+          </div>`;
+        if (booking.purpose) {
+          bodyHtml += `<div class="room-info-row">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            <span>${escHtml(displayPurpose(booking.purpose))}</span>
+          </div>`;
+        }
+        if (booking.conflictResolved && booking.conflictNote) {
+          bodyHtml += `<div class="room-info-row" style="color:var(--text-muted);font-size:12px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+            <span>${escHtml(booking.conflictNote)}</span>
+          </div>`;
+        }
         bodyHtml += `<div class="room-info-row">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-          <span>${escHtml(displayPurpose(booking.purpose))}</span>
-        </div>`;
-      }
-      if (booking.conflictResolved && booking.conflictNote) {
-        bodyHtml += `<div class="room-info-row" style="color:var(--text-muted);font-size:12px;">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-          <span>${escHtml(booking.conflictNote)}</span>
-        </div>`;
-      }
-      bodyHtml += `<div class="room-info-row">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-          <span>Free at <strong>${freeAt}</strong> &mdash; ${mins} min remaining</span>
-        </div>`;
-      bodyHtml += `<div class="room-time-bar"><div class="room-time-fill ${barClass}" style="width:${pct}%"></div></div>`;
-      bodyHtml += `<div class="room-time-label">${fmtTime(booking.start)} – ${fmtTime(booking.end)}</div>`;
-      bodyHtml += `<button class="btn-release-early" onclick="openReleaseModal('${booking.id}')">Release Room Now</button>`;
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <span>Free at <strong>${freeAt}</strong> &mdash; ${mins} min remaining</span>
+          </div>`;
+        bodyHtml += `<div class="room-time-bar"><div class="room-time-fill ${bBarClass}" style="width:${bPct}%"></div></div>`;
+        bodyHtml += `<div class="room-time-label">${fmtTime(booking.start)} – ${fmtTime(booking.end)}</div>`;
+        bodyHtml += `<button class="btn-release-early" onclick="openReleaseModal('${booking.id}')">Release Room Now</button>`;
+      });
     } else {
       const nextToday = nextBookings[0];
       const freeUntilText = nextToday ? `Free until ${fmtTime(nextToday.start)}` : 'Free all day';
@@ -1799,10 +1808,8 @@ function openSchedModal(roomId) {
   const today = new Date();
   today.setHours(0,0,0,0);
   let html = '';
-  const PAST_DAYS = 60;    // how far back to show
-  const FUTURE_DAYS = 30;  // how far forward to show
 
-  for (let i = -PAST_DAYS; i < FUTURE_DAYS; i++){
+  for (let i = 0; i < 30; i++) {
     const d = new Date(today);
     d.setDate(today.getDate() + i);
     const ds = localDateStr(d);

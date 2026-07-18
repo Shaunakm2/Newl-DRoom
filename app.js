@@ -1799,8 +1799,10 @@ function openSchedModal(roomId) {
   const today = new Date();
   today.setHours(0,0,0,0);
   let html = '';
+  const PAST_DAYS = 60;    // how far back to show
+  const FUTURE_DAYS = 30;  // how far forward to show
 
-  for (let i = 0; i < 30; i++) {
+  for (let i = -PAST_DAYS; i < FUTURE_DAYS; i++){
     const d = new Date(today);
     d.setDate(today.getDate() + i);
     const ds = localDateStr(d);

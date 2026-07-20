@@ -79,7 +79,12 @@ async function loadData(silent = false) {
   if (silent && _writeRecentlyCompleted()) return;
   try {
     if (!silent) showLoadingOverlay(true);
-    const { data, error } = await supabase.from('bookings').select('*');
+    const { data, error } = await supabase
+      .from('bookings')
+      .select('*')
+      .order('booking_date', { ascending: false }) // most relevant/recent dates first, so if the row cap below is ever hit again, today's and future bookings are prioritized over old history
+      .range(0, 4999); // Supabase/PostgREST defaults to a silent 1000-row cap on unpaginated selects — that was the bug: today's bookings simply weren't in the first 1000 rows returned. This explicitly requests up to 5000.
+
     if (error) throw error;
     bookings = (data || []).map(r => ({
       id: String(r.booking_id || '').trim(),

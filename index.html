@@ -185,7 +185,7 @@
         <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
           <div class="search-input-wrap">
             <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-            <input type="text" id="search-input" placeholder="Search bookings..." oninput="_tablePage=0;renderTable()">
+            <input type="text" id="search-input" placeholder="Search by name, room, or purpose..." oninput="_tablePage=0;renderTable()">
           </div>
           <select id="filter-room" onchange="_tablePage=0;renderTable()" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);color:var(--text);font-size:14px;outline:none;">
             <option value="">All rooms</option>
@@ -448,12 +448,22 @@
     <div class="sched-modal-header">
       <div>
         <h2 id="sched-modal-room">Room Schedule</h2>
-        <p>Past 60 days & next 30 days — click any free slot to contact admin for booking</p>
+        <p>Next 30 days — click any free slot to contact admin for booking</p>
       </div>
       <button class="sched-close" onclick="closeSchedModal()">&#x2715;</button>
     </div>
     <div class="sched-modal-body" id="sched-modal-body"></div>
   </div>
+</div>
+
+<!-- Tiny decorative elephant, walks across the bottom of the screen -->
+<div id="tiny-elephant" aria-hidden="true">🐘</div>
+
+<!-- Bottom-right easter egg: a sunflower that waves in the breeze, bee buzzing nearby. Always live. -->
+<div id="sunflower-egg" aria-hidden="true">
+  <div id="sunflower-bee">🐝</div>
+  <div id="sunflower-plant">🌻</div>
+  <div id="sunflower-pot"></div>
 </div>
 
 </body>

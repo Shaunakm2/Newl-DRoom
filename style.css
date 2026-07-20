@@ -1,4 +1,4 @@
-  :root {
+:root {
     --bg: #F5F2EC;
     --surface: #FEFCF8;
     --surface2: #EFECE4;
@@ -179,6 +179,10 @@
   }
   .room-info-row svg { flex-shrink: 0; opacity: 0.5; }
   .room-booker { color: var(--text); font-weight: 500; }
+  .room-occupant-divider {
+    border-top: 1px dashed var(--border-light);
+    margin: 12px 0 10px;
+  }
   .room-time-bar {
     margin-top: 14px;
     height: 4px;
@@ -997,3 +1001,85 @@
 
 
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* Tiny decorative elephant walking across the bottom of the screen */
+#tiny-elephant {
+  position: fixed;
+  bottom: 6px;
+  left: 0;
+  font-size: 22px;
+  line-height: 1;
+  z-index: 5;
+  pointer-events: none;
+  user-select: none;
+  animation: elephant-walk 38s linear infinite;
+  filter: drop-shadow(0 2px 2px rgba(0,0,0,0.15));
+}
+@keyframes elephant-walk {
+  0%   { transform: translateX(-10vw) scaleX(1); }
+  49%  { transform: translateX(105vw) scaleX(1); }
+  50%  { transform: translateX(105vw) scaleX(-1); }
+  99%  { transform: translateX(-10vw) scaleX(-1); }
+  100% { transform: translateX(-10vw) scaleX(1); }
+}
+@media (max-width: 640px) {
+  #tiny-elephant { font-size: 18px; }
+}
+
+/* Bottom-right easter egg: waving sunflower in a pot + buzzing bee. Always live. */
+#sunflower-egg {
+  position: fixed;
+  bottom: 0;
+  right: 18px;
+  width: 70px;
+  height: 100px;
+  z-index: 5;
+  pointer-events: none;
+  user-select: none;
+}
+#sunflower-plant {
+  position: absolute;
+  bottom: 34px;
+  left: 50%;
+  font-size: 40px;
+  line-height: 1;
+  transform-origin: 50% 100%;
+  animation: sunflower-wave 3.2s ease-in-out infinite;
+  filter: drop-shadow(0 2px 2px rgba(0,0,0,0.15));
+}
+@keyframes sunflower-wave {
+  0%, 100% { transform: translateX(-50%) rotate(-6deg); }
+  50%      { transform: translateX(-50%) rotate(6deg); }
+}
+#sunflower-pot {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 34px;
+  height: 26px;
+  background: linear-gradient(180deg, #C97A4A, #A85F35);
+  border-radius: 4px 4px 10px 10px;
+  box-shadow: inset 0 -4px 6px rgba(0,0,0,0.15), 0 2px 3px rgba(0,0,0,0.15);
+}
+#sunflower-bee {
+  position: absolute;
+  bottom: 62px;
+  left: 62%;
+  font-size: 14px;
+  animation: bee-buzz 2.6s ease-in-out infinite;
+}
+@keyframes bee-buzz {
+  0%   { transform: translate(0, 0) rotate(0deg); }
+  20%  { transform: translate(10px, -8px) rotate(15deg); }
+  40%  { transform: translate(2px, -14px) rotate(-10deg); }
+  60%  { transform: translate(-10px, -6px) rotate(-18deg); }
+  80%  { transform: translate(-4px, 2px) rotate(8deg); }
+  100% { transform: translate(0, 0) rotate(0deg); }
+}
+@media (max-width: 640px) {
+  #sunflower-egg { width: 52px; height: 78px; right: 10px; }
+  #sunflower-plant { font-size: 30px; bottom: 26px; }
+  #sunflower-pot { width: 26px; height: 20px; }
+  #sunflower-bee { font-size: 11px; bottom: 48px; }
+}

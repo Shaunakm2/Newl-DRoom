@@ -448,9 +448,12 @@
     <div class="sched-modal-header">
       <div>
         <h2 id="sched-modal-room">Room Schedule</h2>
-        <p>Next 30 days — click any free slot to contact admin for booking</p>
+        <p>Past 30 days &middot; Today &middot; Next 30 days — scroll to browse, click a free slot to contact admin</p>
       </div>
-      <button class="sched-close" onclick="closeSchedModal()">&#x2715;</button>
+      <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('sched-today-anchor')?.scrollIntoView({block:'center', behavior:'smooth'})">Jump to today</button>
+        <button class="sched-close" onclick="closeSchedModal()">&#x2715;</button>
+      </div>
     </div>
     <div class="sched-modal-body" id="sched-modal-body"></div>
   </div>

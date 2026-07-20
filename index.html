@@ -459,11 +459,19 @@
   </div>
 </div>
 
-<!-- Bottom-right easter egg: a sunflower that waves in the breeze, bee buzzing nearby. Always live. -->
+<!-- Bottom-right easter egg: waving sunflower in a pot, buzzing bee. Click the sunflower for quick help. Always live. -->
 <div id="sunflower-egg" aria-hidden="true">
   <div id="sunflower-bee">🐝</div>
-  <div id="sunflower-plant">🌻</div>
+  <div id="sunflower-plant" role="button" tabindex="0" aria-label="Open quick help" title="Need help?" onclick="toggleSunflowerHelp()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleSunflowerHelp();}">🌻</div>
   <div id="sunflower-pot"></div>
+</div>
+
+<div id="sunflower-help-panel" style="display:none;">
+  <div class="sf-help-header">
+    <span>🌻 Need a hand?</span>
+    <button class="sf-help-close" onclick="toggleSunflowerHelp(false)" aria-label="Close">&#x2715;</button>
+  </div>
+  <div class="sf-help-body" id="sf-help-body"></div>
 </div>
 
 </body>

@@ -79,22 +79,9 @@ async function loadData(silent = false) {
   if (silent && _writeRecentlyCompleted()) return;
   try {
     if (!silent) showLoadingOverlay(true);
-    // Supabase/PostgREST caps a single select('*') at 1000 rows by default,
-    // silently — no error, just a truncated result. As the table grows past
-    // that (recurring bookings, bulk historical imports, etc.), some rows
-    // would quietly stop being fetched at all. Paginate with .range() so
-    // every row always loads, no matter how large the table gets.
-    const pageSize = 1000;
-    let allRows = [];
-    let from = 0;
-    while (true) {
-      const { data, error } = await supabase.from('bookings').select('*').range(from, from + pageSize - 1);
-      if (error) throw error;
-      allRows = allRows.concat(data || []);
-      if (!data || data.length < pageSize) break; // last page was partial (or empty) — done
-      from += pageSize;
-    }
-    bookings = allRows.map(r => ({
+    const { data, error } = await supabase.from('bookings').select('*');
+    if (error) throw error;
+    bookings = (data || []).map(r => ({
       id: String(r.booking_id || '').trim(),
       room: String(r.room || '').trim(),
       booker: String(r.booked_by || '').trim(),
@@ -123,24 +110,7 @@ async function loadData(silent = false) {
   }
 }
 
-// ===== TEAMS NOTIFICATIONS =====
-// Fire-and-forget calls to the teams-notify Edge Function. Never awaited by
-// callers in a way that blocks the booking action, and never throws outward —
-// a Teams outage should never be able to break an actual booking.
-const TEAMS_NOTIFY_URL = SUPABASE_URL + '/functions/v1/teams-notify';
-
-function notifyTeams(payload) {
-  fetch(TEAMS_NOTIFY_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer ' + SUPABASE_PUBLISHABLE_KEY
-    },
-    body: JSON.stringify(payload)
-  }).catch(e => console.error('Teams notify failed (non-blocking):', e));
-}
-
-async function apiCreate(b, silent) {
+async function apiCreate(b) {
   const endDate = b.endDate || (isOvernight(b) ? addDaysStr(b.date, 1) : b.date);
   const { error } = await supabase.from('bookings').insert({
     booking_id: b.id, room: b.room, booked_by: b.booker, purpose: b.purpose || '',
@@ -149,27 +119,12 @@ async function apiCreate(b, silent) {
   });
   if (error) throw error;
   _writeCompletedAt = Date.now();
-  if (!silent) {
-    notifyTeams({
-      event: (b.status || 'Confirmed') === 'Pending' ? 'newRequest' : 'newConfirmed',
-      room: roomName(b.room), bookedBy: b.booker, purpose: displayPurpose(b.purpose) || '',
-      date: fmtDate(b.date), start: fmtTime(b.start), end: fmtTime(b.end)
-    });
-  }
 }
 
 async function apiUpdateStatus(id, status) {
-  const before = bookings.find(x => x.id === id);
   const { error } = await supabase.from('bookings').update({ status }).eq('booking_id', id);
   if (error) throw error;
   _writeCompletedAt = Date.now();
-  if (status === 'Confirmed' && before) {
-    notifyTeams({
-      event: 'approved',
-      room: roomName(before.room), bookedBy: before.booker, purpose: displayPurpose(before.purpose) || '',
-      date: fmtDate(before.date), start: fmtTime(before.start), end: fmtTime(before.end)
-    });
-  }
 }
 
 async function apiSetConflictResolved(id, resolved, note) {
@@ -194,27 +149,15 @@ async function apiCreateRequestBatch(bookingsArr) {
   const { error } = await supabase.from('bookings').insert(rows);
   if (error) throw error;
   _writeCompletedAt = Date.now();
-
-  const first = bookingsArr[0], last = bookingsArr[bookingsArr.length - 1];
-  const dayLabel = bookingsArr.length > 1 ? (bookingsArr.length + ' days, ') : '';
-  const dateRange = first.date === last.date ? fmtDate(first.date) : (fmtDate(first.date) + ' to ' + fmtDate(last.date));
-  notifyTeams({
-    event: bookingsArr.length > 1 ? 'newRecurringRequest' : 'newRequest',
-    room: roomName(first.room), bookedBy: first.booker, purpose: displayPurpose(first.purpose) || '',
-    dayLabel, dateRange, start: fmtTime(first.start), end: fmtTime(first.end)
-  });
 }
 
 async function apiUpdateStatusBatch(ids, status) {
   const { error } = await supabase.from('bookings').update({ status }).in('booking_id', ids);
   if (error) throw error;
   _writeCompletedAt = Date.now();
-  if (status === 'Confirmed') {
-    notifyTeams({ event: 'batchApproved', count: ids.length });
-  }
 }
 
-async function apiUpdate(b, silent) {
+async function apiUpdate(b) {
   // Postgres updates are transactional and immediate, so — unlike the old
   // Apps Script version — this is a single UPDATE, no delete-then-recreate
   // dance and no artificial 1.5s wait for eventual consistency.
@@ -227,27 +170,12 @@ async function apiUpdate(b, silent) {
   }).eq('booking_id', b.id);
   if (error) throw error;
   _writeCompletedAt = Date.now();
-  if (!silent) {
-    notifyTeams({
-      event: 'modified',
-      room: roomName(b.room), bookedBy: b.booker, purpose: displayPurpose(b.purpose) || '',
-      date: fmtDate(b.date), start: fmtTime(b.start), end: fmtTime(b.end)
-    });
-  }
 }
 
-async function apiDelete(id, silent) {
-  const b = bookings.find(x => x.id === id);
+async function apiDelete(id) {
   const { error } = await supabase.from('bookings').delete().eq('booking_id', id);
   if (error) throw error;
   _writeCompletedAt = Date.now();
-  if (!silent && b) {
-    notifyTeams({
-      event: 'deletedOrRejected',
-      room: roomName(b.room), bookedBy: b.booker, purpose: displayPurpose(b.purpose) || '',
-      date: fmtDate(b.date), start: fmtTime(b.start), end: fmtTime(b.end)
-    });
-  }
 }
 
 // Public self-service actions. These call SECURITY DEFINER Postgres functions
@@ -557,22 +485,19 @@ function getRoomStatus(roomId) {
   const now = nowMinutes();
   const relevant = bookings.filter(b => b.room === roomId && (b.status === 'Confirmed' || !b.status));
 
-  // Collect EVERY booking active right now (today, or spilling over from
-  // yesterday) — a room can legitimately have more than one at once when an
-  // admin has marked an overlap as a resolved conflict (e.g. two trainers
-  // sharing the same room), so we no longer stop at the first match.
-  const activeList = [];
+  // Find ALL bookings active right now (today, or spilling over from yesterday).
+  // A room can legitimately have more than one active booking at once when an
+  // admin has resolved a conflict and both trainers are using the room.
+  const activeEntries = [];
   for (const b of relevant) {
     const info = activeSpanInfo(b);
-    if (info) activeList.push({ booking: b, info });
+    if (info) activeEntries.push({ booking: b, info });
   }
-  activeList.sort((a, c) => (a.info.total - a.info.elapsed) - (c.info.total - c.info.elapsed)); // soonest-ending first
-
-  const activeIds = new Set(activeList.map(a => a.booking.id));
+  const activeBookings = activeEntries.map(e => e.booking);
 
   // Helper: bookings with a span starting later today (after now)
   const upcomingToday = relevant
-    .filter(b => !activeIds.has(b.id))
+    .filter(b => !activeBookings.includes(b))
     .map(b => {
       const sp = bookingSpans(b).find(s => s.date === today && s.start > now);
       return sp ? { b, start: sp.start } : null;
@@ -581,21 +506,22 @@ function getRoomStatus(roomId) {
     .sort((a, c) => a.start - c.start)
     .map(x => x.b);
 
-  if (activeList.length > 0) {
-    const remaining = activeList[0].info.total - activeList[0].info.elapsed; // soonest of the concurrent bookings
+  if (activeEntries.length > 0) {
+    // Soonest-ending booking first, so the card's headline status/countdown
+    // reflects whichever occupant is leaving next.
+    activeEntries.sort((a, c) =>
+      (a.info.total - a.info.elapsed) - (c.info.total - c.info.elapsed));
+    const soonestRemaining = activeEntries[0].info.total - activeEntries[0].info.elapsed;
     return {
-      status: remaining <= 30 ? 'soon' : 'occupied',
-      activeBookings: activeList,
-      remaining,
+      status: soonestRemaining <= 30 ? 'soon' : 'occupied',
+      activeEntries,
       nextBookings: upcomingToday
     };
   }
 
   return {
     status: 'free',
-    activeBookings: [],
-    remaining: null,
-    pct: 0,
+    activeEntries: [],
     nextBookings: upcomingToday.slice(0, 1)
   };
 }
@@ -613,7 +539,7 @@ function renderStatusGrid() {
 
   for (const room of ROOMS) {
     if (floorFilter && room.floor !== floorFilter) continue;
-    const { status, activeBookings, remaining, nextBookings } = getRoomStatus(room.id);
+    const { status, activeEntries, nextBookings } = getRoomStatus(room.id);
     if (status === 'free') freeCount++;
     else if (status === 'occupied') occCount++;
     else soonCount++;
@@ -633,13 +559,17 @@ function renderStatusGrid() {
     const roomShadow = roomColor + '18';
 
     let bodyHtml = '';
-    if (activeBookings && activeBookings.length > 0) {
-      activeBookings.forEach(({ booking, info }, idx) => {
+    if (activeEntries.length > 0) {
+      activeEntries.forEach((entry, idx) => {
+        const { booking, info } = entry;
         const mins = info.total - info.elapsed;
-        const bPct = Math.min(100, Math.round((info.elapsed / info.total) * 100));
-        const bBarClass = mins <= 30 ? 'warn' : '';
+        const entryPct = Math.min(100, Math.round((info.elapsed / info.total) * 100));
+        const entryBarClass = mins <= 30 ? 'warn' : '';
         const freeAt = fmtTime(booking.end);
-        if (idx > 0) bodyHtml += `<hr class="divider" style="margin:10px 0;">`;
+
+        if (idx > 0) {
+          bodyHtml += `<div class="room-occupant-divider"></div>`;
+        }
         bodyHtml += `
           <div class="room-info-row">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -661,9 +591,9 @@ function renderStatusGrid() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             <span>Free at <strong>${freeAt}</strong> &mdash; ${mins} min remaining</span>
           </div>`;
-        bodyHtml += `<div class="room-time-bar"><div class="room-time-fill ${bBarClass}" style="width:${bPct}%"></div></div>`;
+        bodyHtml += `<div class="room-time-bar"><div class="room-time-fill ${entryBarClass}" style="width:${entryPct}%"></div></div>`;
         bodyHtml += `<div class="room-time-label">${fmtTime(booking.start)} – ${fmtTime(booking.end)}</div>`;
-        bodyHtml += `<button class="btn-release-early" onclick="openReleaseModal('${booking.id}')">Release Room Now</button>`;
+        bodyHtml += `<button class="btn-release-early" onclick="openReleaseModal('${booking.id}')">Release ${escHtml(booking.booker)}'s Booking</button>`;
       });
     } else {
       const nextToday = nextBookings[0];
@@ -718,15 +648,16 @@ function renderStatusGrid() {
 }
 
 // ===== ADMIN TABLE =====
-// Shared by renderTable() and exportExcel() so the export always matches
-// exactly what's currently visible in the table — no separate filter logic
-// to keep in sync in two places.
-function getFilteredBookings() {
+function renderTable() {
+  if (!_tablePageLocked) _tablePage = 0;
+  const tbody = document.getElementById('table-body');
   const search = document.getElementById('search-input').value.toLowerCase().trim();
   const filterRoom = document.getElementById('filter-room').value;
   const filterDate = document.getElementById('filter-date').value;
   const conflictsOnly = document.getElementById('filter-conflicts-only')?.checked;
   const today = todayStr();
+  // Preserve current selection across re-render
+  const prevSelected = new Set(getSelectedIds());
 
   let filtered = [...bookings];
   if (conflictsOnly) filtered = filtered.filter(b => (b.status === 'Pending' || b.status === 'Confirmed') && getLiveConflicts(b).length > 0);
@@ -742,16 +673,6 @@ function getFilteredBookings() {
   if (filterDate === 'today') filtered = filtered.filter(b => b.date === today);
   else if (filterDate === 'upcoming') filtered = filtered.filter(b => bookingTimeStatus(b) !== 'past');
   else if (filterDate === 'past') filtered = filtered.filter(b => bookingTimeStatus(b) === 'past');
-  return filtered;
-}
-
-function renderTable() {
-  if (!_tablePageLocked) _tablePage = 0;
-  const tbody = document.getElementById('table-body');
-  // Preserve current selection across re-render
-  const prevSelected = new Set(getSelectedIds());
-
-  let filtered = getFilteredBookings();
 
   // Sort
   filtered.sort((a, b) => {
@@ -1097,25 +1018,16 @@ async function submitBooking(e) {
     }
     try {
       showLoadingOverlay(true);
-      // Delete original booking (silent — this is an internal step of one
-      // "modify recurring series" action, not a real deletion to notify about)
-      await apiDelete(id, true);
+      // Delete original booking
+      await apiDelete(id);
       bookings = bookings.filter(b => b.id !== id);
-      // Create new bookings for each date (also silent — one combined
-      // notification below instead of one per date)
+      // Create new bookings for each date
       for (const d of dates) {
         const computedEndDate = minutesSinceMidnight(end) < minutesSinceMidnight(start) ? addDaysStr(d, 1) : d;
         const booking = { id: genId(), room, booker, purpose, date: d, start, end, attendees: attendees || '', status: 'Confirmed', endDate: computedEndDate };
         bookings.push(booking);
-        await apiCreate(booking, true);
+        await apiCreate(booking);
       }
-      const dRange = dates.length > 1 ? (fmtDate(dates[0]) + ' to ' + fmtDate(dates[dates.length-1])) : fmtDate(dates[0]);
-      notifyTeams({
-        event: 'modified',
-        room: roomName(room), bookedBy: booker, purpose: displayPurpose(purpose) || '',
-        dayLabel: dates.length > 1 ? (dates.length + ' days, ') : '', dateRange: dRange,
-        start: fmtTime(start), end: fmtTime(end)
-      });
       toast(`Booking updated across ${dates.length} date(s).`);
     } catch(err) { toast('Error saving. Try again.', true); } finally { showLoadingOverlay(false); }
     resetForm(); renderTable(); renderActiveNow(); renderStatusGrid();
@@ -1140,15 +1052,8 @@ async function submitBooking(e) {
         const computedEndDate = minutesSinceMidnight(end) < minutesSinceMidnight(start) ? addDaysStr(d, 1) : d;
         const booking = { id: genId(), room, booker, purpose, date: d, start, end, attendees: attendees || '', status: 'Confirmed', endDate: computedEndDate };
         bookings.push(booking);
-        await apiCreate(booking, true);
+        await apiCreate(booking);
       }
-      const dRange = dates.length > 1 ? (fmtDate(dates[0]) + ' to ' + fmtDate(dates[dates.length-1])) : fmtDate(dates[0]);
-      notifyTeams({
-        event: dates.length > 1 ? 'newRecurringConfirmed' : 'newConfirmed',
-        room: roomName(room), bookedBy: booker, purpose: displayPurpose(purpose) || '',
-        dayLabel: dates.length > 1 ? (dates.length + ' days, ') : '', dateRange: dRange,
-        start: fmtTime(start), end: fmtTime(end)
-      });
       toast(dates.length === 1 ? 'Room booked successfully.' : `${dates.length} recurring bookings created (Mon–Fri).`);
     } catch(err) { toast('Error saving. Try again.', true); } finally { showLoadingOverlay(false); }
     resetForm(); renderTable(); renderActiveNow(); renderStatusGrid();
@@ -1445,7 +1350,7 @@ async function submitRequest() {
       const statusLabel = isPending ? 'a pending request' : 'a confirmed booking';
       const dayCountNote = conflictDates.length > 1 ? ` — ${conflictDates.length} of ${dates.length} days affected (${totalConflictCount} overlapping booking(s) total)` : (totalConflictCount > 1 ? ` — ${totalConflictCount} overlapping bookings that day` : '');
       noticeEl.style.display = '';
-      noticeEl.innerHTML = `⚠️ <strong>Note:</strong> ${roomName(room)} already has ${statusLabel} from ${fmtTime(first.start)}–${fmtTime(first.end)} on ${fmtDate(conflictDates[0])} by ${first.booker}${dayCountNote}. Your request has been submitted — please check with the admin for confirmation.`;
+      noticeEl.innerHTML = `⚠️ <strong>Note:</strong> ${roomName(room)} already has ${statusLabel} from ${fmtTime(first.start)}–${fmtTime(first.end)} on ${fmtDate(conflictDates[0])} by ${escHtml(first.booker)}${dayCountNote}. Your request has been submitted — please check with the admin for confirmation.`;
     } else if (noticeEl) {
       noticeEl.style.display = 'none';
     }
@@ -1847,19 +1752,6 @@ window.addEventListener('beforeunload', e => {
 
 // ===== INIT =====
 async function init() {
-  // Supabase Auth persists the session in the browser automatically, but our
-  // own adminLoggedIn flag is just an in-memory JS variable that resets on
-  // every reload. Check for an existing valid session here so a refresh
-  // doesn't silently log the admin out.
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session) {
-      adminLoggedIn = true;
-      _sessionToken = session.access_token;
-      document.getElementById('logout-btn').style.display = '';
-    }
-  } catch(e) { console.error('Session restore failed', e); }
-
   populateRoomSelects();
   document.getElementById('f-date').value = todayStr();
   updateClock();
@@ -1919,10 +1811,7 @@ function openSchedModal(roomId) {
   today.setHours(0,0,0,0);
   let html = '';
 
-  const PAST_DAYS = 60;   // how far back to show
-  const FUTURE_DAYS = 30; // how far forward to show
-
-  for (let i = -PAST_DAYS; i < FUTURE_DAYS; i++) {
+  for (let i = 0; i < 30; i++) {
     const d = new Date(today);
     d.setDate(today.getDate() + i);
     const ds = localDateStr(d);
@@ -1963,7 +1852,7 @@ function openSchedModal(roomId) {
     const todayTag = isToday ? ' &mdash; Today' : '';
     const weekendTag = isWeekend ? ' <span style="color:var(--text-faint);font-weight:400">(Weekend)</span>' : '';
 
-    html += '<div class="sched-day-group"' + (isToday ? ' id="sched-day-today"' : '') + '>' +
+    html += '<div class="sched-day-group">' +
       '<div class="' + labelClass + '">' + dayName + todayTag + weekendTag + '</div>' +
       dayHtml +
     '</div>';
@@ -1971,14 +1860,6 @@ function openSchedModal(roomId) {
 
   body.innerHTML = html;
   document.getElementById('sched-modal').style.display = 'flex';
-
-  // Open scrolled to today, not 60 days back — past data is one scroll up
-  // away, future data one scroll down, but today is what you want first.
-  // Deferred a tick so layout has settled after display:none -> flex.
-  setTimeout(() => {
-    const todayEl = document.getElementById('sched-day-today');
-    if (todayEl) todayEl.scrollIntoView({ block: 'start' });
-  }, 0);
 }
 
 function closeSchedModal() {
@@ -2228,8 +2109,7 @@ async function confirmCancelOrRelease() {
       renderTable(); renderActiveNow(); renderPendingRequests();
     }
   } catch(e) {
-    console.error('Cancel/Release error:', e);
-    toast('Error: ' + (e.message || 'please try again.'), true);
+    toast('Error — please try again.', true);
   } finally {
     showLoadingOverlay(false);
   }
@@ -2449,8 +2329,7 @@ function launchConfetti() {
 // ===== EXPORT EXCEL =====
 function exportExcel() {
   const headers = ['Room','Floor','Booked By','Purpose','Date','Start Time','End Time','Attendees','Status','Conflict Note'];
-  const filteredBookings = getFilteredBookings();
-  const rows = [...filteredBookings].sort((a,b) => {
+  const rows = [...bookings].sort((a,b) => {
     const da = a.date + a.start, db = b.date + b.start;
     return da < db ? -1 : da > db ? 1 : 0;
   }).map(b => {
@@ -2480,32 +2359,12 @@ function exportExcel() {
     toast('Loading Excel library, please try again in a moment.', true);
     return;
   }
-  if (rows.length === 0) {
-    toast('No bookings match the current filters — nothing to export.', true);
-    return;
-  }
   const ws = XLSX.utils.json_to_sheet(rows, { header: headers });
   ws['!cols'] = [20,18,22,28,14,14,14,12,12,30].map(w => ({ wch: w }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Room Bookings');
-
-  // Reflect the active filters in the filename, so a filtered export is
-  // recognizable at a glance (e.g. room-bookings-chanakya-upcoming-2026-07-18.xlsx)
-  const filterRoom = document.getElementById('filter-room').value;
-  const filterDate = document.getElementById('filter-date').value;
-  const search = document.getElementById('search-input').value.trim();
-  const conflictsOnly = document.getElementById('filter-conflicts-only')?.checked;
-  const parts = ['room-bookings'];
-  if (filterRoom) parts.push(filterRoom);
-  if (filterDate) parts.push(filterDate);
-  if (conflictsOnly) parts.push('conflicts');
-  if (search) parts.push(search.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 20));
-  parts.push(todayStr());
-  const filename = parts.filter(Boolean).join('-') + '.xlsx';
-
-  XLSX.writeFile(wb, filename);
-  const filterActive = filterRoom || filterDate || conflictsOnly || search;
-  toast(filterActive ? `Exported ${rows.length} filtered booking(s).` : `Exported ${rows.length} booking(s).`);
+  XLSX.writeFile(wb, 'room-bookings-' + todayStr() + '.xlsx');
+  toast('Excel file downloaded.');
 }
 
 init();

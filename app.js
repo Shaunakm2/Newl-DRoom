@@ -648,16 +648,12 @@ function renderStatusGrid() {
 }
 
 // ===== ADMIN TABLE =====
-function renderTable() {
-  if (!_tablePageLocked) _tablePage = 0;
-  const tbody = document.getElementById('table-body');
+function getFilteredBookings() {
   const search = document.getElementById('search-input').value.toLowerCase().trim();
   const filterRoom = document.getElementById('filter-room').value;
   const filterDate = document.getElementById('filter-date').value;
   const conflictsOnly = document.getElementById('filter-conflicts-only')?.checked;
   const today = todayStr();
-  // Preserve current selection across re-render
-  const prevSelected = new Set(getSelectedIds());
 
   let filtered = [...bookings];
   if (conflictsOnly) filtered = filtered.filter(b => (b.status === 'Pending' || b.status === 'Confirmed') && getLiveConflicts(b).length > 0);
@@ -674,7 +670,6 @@ function renderTable() {
   else if (filterDate === 'upcoming') filtered = filtered.filter(b => bookingTimeStatus(b) !== 'past');
   else if (filterDate === 'past') filtered = filtered.filter(b => bookingTimeStatus(b) === 'past');
 
-  // Sort
   filtered.sort((a, b) => {
     let va, vb;
     if (_sortField === 'room') {
@@ -700,7 +695,16 @@ function renderTable() {
     return 0;
   });
 
+  return filtered;
+}
 
+function renderTable() {
+  if (!_tablePageLocked) _tablePage = 0;
+  const tbody = document.getElementById('table-body');
+  // Preserve current selection across re-render
+  const prevSelected = new Set(getSelectedIds());
+
+  const filtered = getFilteredBookings();
 
   if (filtered.length === 0) {
     tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state">
@@ -1811,7 +1815,7 @@ function openSchedModal(roomId) {
   today.setHours(0,0,0,0);
   let html = '';
 
-  for (let i = 0; i < 30; i++) {
+  for (let i = -30; i <= 30; i++) {
     const d = new Date(today);
     d.setDate(today.getDate() + i);
     const ds = localDateStr(d);
@@ -1852,7 +1856,7 @@ function openSchedModal(roomId) {
     const todayTag = isToday ? ' &mdash; Today' : '';
     const weekendTag = isWeekend ? ' <span style="color:var(--text-faint);font-weight:400">(Weekend)</span>' : '';
 
-    html += '<div class="sched-day-group">' +
+    html += '<div class="sched-day-group"' + (isToday ? ' id="sched-today-anchor"' : '') + '>' +
       '<div class="' + labelClass + '">' + dayName + todayTag + weekendTag + '</div>' +
       dayHtml +
     '</div>';
@@ -1860,6 +1864,10 @@ function openSchedModal(roomId) {
 
   body.innerHTML = html;
   document.getElementById('sched-modal').style.display = 'flex';
+  // Open centered on today rather than at the top of the 30-days-ago end.
+  requestAnimationFrame(() => {
+    document.getElementById('sched-today-anchor')?.scrollIntoView({ block: 'center' });
+  });
 }
 
 function closeSchedModal() {
@@ -2329,10 +2337,8 @@ function launchConfetti() {
 // ===== EXPORT EXCEL =====
 function exportExcel() {
   const headers = ['Room','Floor','Booked By','Purpose','Date','Start Time','End Time','Attendees','Status','Conflict Note'];
-  const rows = [...bookings].sort((a,b) => {
-    const da = a.date + a.start, db = b.date + b.start;
-    return da < db ? -1 : da > db ? 1 : 0;
-  }).map(b => {
+  const filtered = getFilteredBookings(); // respects search + room + date + conflicts-only filters currently applied
+  const rows = filtered.map(b => {
     const room = ROOMS.find(r => r.id === b.room) || {};
     let status;
     if (b.status === 'Pending') status = 'Pending';
@@ -2359,12 +2365,25 @@ function exportExcel() {
     toast('Loading Excel library, please try again in a moment.', true);
     return;
   }
+  if (rows.length === 0) {
+    toast('No bookings match the current filters — nothing to export.', true);
+    return;
+  }
   const ws = XLSX.utils.json_to_sheet(rows, { header: headers });
   ws['!cols'] = [20,18,22,28,14,14,14,12,12,30].map(w => ({ wch: w }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Room Bookings');
-  XLSX.writeFile(wb, 'room-bookings-' + todayStr() + '.xlsx');
-  toast('Excel file downloaded.');
+
+  // Reflect the active room filter in the filename, if any, so multiple
+  // exports from different filters don't overwrite each other.
+  const filterRoomId = document.getElementById('filter-room')?.value;
+  const roomSuffix = filterRoomId ? '-' + roomName(filterRoomId).toLowerCase().replace(/\s+/g, '-') : '';
+  XLSX.writeFile(wb, `room-bookings${roomSuffix}-${todayStr()}.xlsx`);
+
+  const totalCount = bookings.length;
+  toast(rows.length === totalCount
+    ? 'Excel file downloaded (' + rows.length + ' bookings).'
+    : 'Excel file downloaded — ' + rows.length + ' of ' + totalCount + ' bookings (filters applied).');
 }
 
 init();

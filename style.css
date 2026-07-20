@@ -1002,30 +1002,6 @@
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* Tiny decorative elephant walking across the bottom of the screen */
-#tiny-elephant {
-  position: fixed;
-  bottom: 6px;
-  left: 0;
-  font-size: 22px;
-  line-height: 1;
-  z-index: 5;
-  pointer-events: none;
-  user-select: none;
-  animation: elephant-walk 38s linear infinite;
-  filter: drop-shadow(0 2px 2px rgba(0,0,0,0.15));
-}
-@keyframes elephant-walk {
-  0%   { transform: translateX(-10vw) scaleX(1); }
-  49%  { transform: translateX(105vw) scaleX(1); }
-  50%  { transform: translateX(105vw) scaleX(-1); }
-  99%  { transform: translateX(-10vw) scaleX(-1); }
-  100% { transform: translateX(-10vw) scaleX(1); }
-}
-@media (max-width: 640px) {
-  #tiny-elephant { font-size: 18px; }
-}
-
 /* Bottom-right easter egg: waving sunflower in a pot + buzzing bee. Always live. */
 #sunflower-egg {
   position: fixed;

@@ -923,6 +923,7 @@
   }
   .tl-booking-block.confirmed { background: #C0392B; }
   .tl-booking-block.ending-soon { background: #C07D00; }
+  .tl-booking-block.past { background: var(--text-faint); opacity: 0.55; }
   .tl-booking-label {
     font-size: 10px;
     font-weight: 600;

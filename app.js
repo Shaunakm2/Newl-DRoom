@@ -628,7 +628,11 @@ function renderStatusGrid() {
         b.room === room.id && b.status === 'Confirmed' &&
         bookingSpans(b).some(s => s.date === today_));
       const isSleepy = status === 'free' && !hasAnyBookingToday;
-      const freeUntilText = nextToday ? `Free until ${fmtTime(nextToday.start)}` : 'Free all day' + (isSleepy ? ' 💤' : '');
+      const freeUntilText = nextToday
+        ? `Free until ${fmtTime(nextToday.start)}`
+        : hasAnyBookingToday
+          ? 'Free for the rest of today'
+          : 'Free all day' + (isSleepy ? ' 💤' : '');
       bodyHtml += `<div class="room-info-row" style="color:var(--text);font-weight:500;">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
         <span>${freeUntilText}</span>

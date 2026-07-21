@@ -2213,11 +2213,7 @@ function renderTimeline() {
       for (const span of spans) {
         const leftPct = (span.start / DAY_MINS) * 100;
         const widthPct = ((span.end - span.start) / DAY_MINS) * 100;
-        const remaining = span.end - now;
-        let cls;
-        if (isToday && now >= span.end) cls = 'past';
-        else if (isToday && now >= span.start && remaining <= 30) cls = 'ending-soon';
-        else cls = 'confirmed';
+        const cls = 'confirmed';
         const startFmt = fmtTime(b.start);
         const endFmt = fmtTime(b.end);
         const showLabel = widthPct > 3;

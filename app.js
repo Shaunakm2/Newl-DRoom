@@ -223,12 +223,12 @@ function showLoadingOverlay(show) {
   clearInterval(_loadingMsgInterval);
   if (show) {
     const msgEl = document.getElementById('loading-overlay-msg');
-    let i = 0;
-    if (msgEl) msgEl.textContent = LOADING_MESSAGES[0];
+    let i = Math.floor(Math.random() * LOADING_MESSAGES.length); // random start so fast actions still show variety, not always "Please wait..."
+    if (msgEl) msgEl.textContent = LOADING_MESSAGES[i];
     _loadingMsgInterval = setInterval(() => {
       i = (i + 1) % LOADING_MESSAGES.length;
       if (msgEl) msgEl.textContent = LOADING_MESSAGES[i];
-    }, 1400);
+    }, 900);
   }
 }
 

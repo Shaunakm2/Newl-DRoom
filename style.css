@@ -273,7 +273,7 @@
     border-color: var(--accent-mid);
     box-shadow: 0 0 0 3px rgba(30,74,60,0.1);
   }
-  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: end; }
   .btn {
     padding: 10px 20px;
     border-radius: var(--radius);

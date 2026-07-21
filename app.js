@@ -205,10 +205,31 @@ async function apiReleaseOwn(id, bookerName, endTime, endDate) {
   _writeCompletedAt = Date.now();
 }
 
+const LOADING_MESSAGES = [
+  'Please wait...',
+  'Counting chairs...',
+  'Waking up the rooms...',
+  'Herding bookings...',
+  'Dusting off the calendars...',
+  'Convincing the rooms to cooperate...',
+];
+let _loadingMsgInterval = null;
+
 function showLoadingOverlay(show) {
   let el = document.getElementById('loading-overlay');
   if (!el) return;
   el.style.display = show ? 'flex' : 'none';
+
+  clearInterval(_loadingMsgInterval);
+  if (show) {
+    const msgEl = document.getElementById('loading-overlay-msg');
+    let i = 0;
+    if (msgEl) msgEl.textContent = LOADING_MESSAGES[0];
+    _loadingMsgInterval = setInterval(() => {
+      i = (i + 1) % LOADING_MESSAGES.length;
+      if (msgEl) msgEl.textContent = LOADING_MESSAGES[i];
+    }, 1400);
+  }
 }
 
 // ===== HELPERS =====
@@ -602,7 +623,12 @@ function renderStatusGrid() {
       });
     } else {
       const nextToday = nextBookings[0];
-      const freeUntilText = nextToday ? `Free until ${fmtTime(nextToday.start)}` : 'Free all day';
+      const today_ = todayStr();
+      const hasAnyBookingToday = bookings.some(b =>
+        b.room === room.id && b.status === 'Confirmed' &&
+        bookingSpans(b).some(s => s.date === today_));
+      const isSleepy = status === 'free' && !hasAnyBookingToday;
+      const freeUntilText = nextToday ? `Free until ${fmtTime(nextToday.start)}` : 'Free all day' + (isSleepy ? ' 💤' : '');
       bodyHtml += `<div class="room-info-row" style="color:var(--text);font-weight:500;">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
         <span>${freeUntilText}</span>
@@ -1219,7 +1245,8 @@ function updateClock() {
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const dateStr = days[now.getDay()] + ', ' + now.getDate() + ' ' + months[now.getMonth()];
   const s = now.getSeconds();
-  document.getElementById('clock').textContent = dateStr + '  ' + pad(hr) + ':' + pad(m) + ':' + pad(s) + ' ' + ap;
+  const dayNightIcon = (h >= 6 && h < 18) ? '☀️' : '🌙';
+  document.getElementById('clock').textContent = dayNightIcon + ' ' + dateStr + '  ' + pad(hr) + ':' + pad(m) + ':' + pad(s) + ' ' + ap;
 }
 
 // ===== UTIL =====
@@ -2187,7 +2214,10 @@ function renderTimeline() {
         const leftPct = (span.start / DAY_MINS) * 100;
         const widthPct = ((span.end - span.start) / DAY_MINS) * 100;
         const remaining = span.end - now;
-        const cls = isToday && now >= span.start && remaining <= 30 ? 'ending-soon' : 'confirmed';
+        let cls;
+        if (isToday && now >= span.end) cls = 'past';
+        else if (isToday && now >= span.start && remaining <= 30) cls = 'ending-soon';
+        else cls = 'confirmed';
         const startFmt = fmtTime(b.start);
         const endFmt = fmtTime(b.end);
         const showLabel = widthPct > 3;

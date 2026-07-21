@@ -73,6 +73,7 @@
         <div class="timeline-legend" id="timeline-legend">
           <div class="timeline-legend-item"><div class="timeline-legend-dot" style="background:#C0392B"></div>Occupied</div>
           <div class="timeline-legend-item"><div class="timeline-legend-dot" style="background:#C07D00"></div>Ending Soon</div>
+          <div class="timeline-legend-item"><div class="timeline-legend-dot" style="background:var(--text-faint);opacity:0.55"></div>Past</div>
           <div class="timeline-legend-item"><div class="timeline-legend-dot" style="background:var(--border-light)"></div>Available</div>
         </div>
       </div>
@@ -439,7 +440,7 @@
 <!-- LOADING OVERLAY -->
 <div id="loading-overlay" style="display:none;position:fixed;inset:0;background:rgba(20,18,14,0.5);z-index:400;align-items:center;justify-content:center;flex-direction:column;gap:12px;">
   <div style="width:40px;height:40px;border:3px solid rgba(255,255,255,0.3);border-top-color:white;border-radius:50%;animation:spin 0.8s linear infinite;"></div>
-  <div style="color:white;font-size:14px;font-family:var(--font-body)">Please wait...</div>
+  <div id="loading-overlay-msg" style="color:white;font-size:14px;font-family:var(--font-body)">Please wait...</div>
 </div>
 
 <!-- SCHEDULE MODAL -->

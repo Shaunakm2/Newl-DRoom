@@ -2492,8 +2492,3 @@ document.addEventListener('keydown', (e) => {
 });
 
 init();
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    
-  });
-}

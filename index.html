@@ -196,6 +196,8 @@
             <option value="past">Past</option>
           </select>
           <select id="filter-sort" onchange="_tablePage=0;_sortField=this.value.split('-')[0];_sortDir=this.value.split('-')[1];renderTable();" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);color:var(--text);font-size:14px;outline:none;">
+            <option value="bookingdate-asc" selected>Booking Date (Soonest)</option>
+            <option value="bookingdate-desc">Booking Date (Latest)</option>
             <option value="datetime-desc">Recently Added</option>
             <option value="datetime-asc">Oldest Added</option>
             <option value="room-asc">Room (A–Z)</option>
@@ -268,9 +270,10 @@
       <div class="modal-sub" id="req-modal-sub">Fill in your details and an admin will confirm your booking.</div>
       <div class="form-group">
         <label>Room</label>
-        <select id="req-room" required>
+        <select id="req-room" required onchange="updateReqCapacityHint()">
           <option value="">Select a room...</option>
         </select>
+        <div id="req-capacity-hint" style="display:none;font-size:12px;color:var(--text-muted);margin-top:4px;"></div>
       </div>
       <div class="form-group">
         <label>Your Name / Team</label>

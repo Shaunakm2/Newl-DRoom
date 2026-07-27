@@ -96,9 +96,10 @@
         <input type="hidden" id="edit-id">
         <div class="form-group">
           <label>Room</label>
-          <select id="f-room" required>
+          <select id="f-room" required onchange="updateFCapacityHint()">
             <option value="">Select a room...</option>
           </select>
+          <div id="f-capacity-hint" style="display:none;margin-top:4px;"></div>
         </div>
         <div class="form-group">
           <label>Booked By</label>

@@ -1146,3 +1146,45 @@
 @media (max-width: 640px) {
   #sunflower-help-panel { bottom: 92px; right: 10px; width: 260px; }
 }
+
+/* Room capacity + equipment badges */
+.room-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.capacity-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--text);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 800;
+  font-family: var(--font-body);
+  line-height: 1;
+  flex-shrink: 0;
+}
+.capacity-badge.sm {
+  width: 18px;
+  height: 18px;
+  font-size: 9px;
+  border-width: 1.5px;
+}
+.equipment-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--surface2);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}

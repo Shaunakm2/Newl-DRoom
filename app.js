@@ -233,6 +233,31 @@ function showLoadingOverlay(show) {
 }
 
 // ===== HELPERS =====
+
+function equipmentIconSvg(equipment) {
+  if (equipment === 'TV') {
+    return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></svg>';
+  }
+  if (equipment === 'Projector') {
+    return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="13" height="10" rx="2"/><circle cx="8.5" cy="12" r="2.3"/><path d="M15 10.5l6-3.5v10l-6-3.5"/></svg>';
+  }
+  if (equipment === 'Interactive Panel') {
+    return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><circle cx="17" cy="10" r="1.1" fill="currentColor" stroke="none"/></svg>';
+  }
+  return '';
+}
+
+function roomBadgesHtml(room, size) {
+  if (!room) return '';
+  const cls = size === 'sm' ? 'capacity-badge sm' : 'capacity-badge';
+  const capHtml = room.capacity
+    ? `<span class="${cls}" title="Seats up to ${room.capacity} people">${room.capacity}</span>` : '';
+  const eqHtml = room.equipment
+    ? `<span class="equipment-badge" title="${escHtml(room.equipment)}">${equipmentIconSvg(room.equipment)}</span>` : '';
+  if (!capHtml && !eqHtml) return '';
+  return `<span class="room-badges">${capHtml}${eqHtml}</span>`;
+}
+
 function genId() {
   const ts = Date.now().toString(36);
   const rand = Array.from(crypto.getRandomValues(new Uint8Array(10)))
@@ -656,7 +681,7 @@ function renderStatusGrid() {
       <div class="room-card-top" onclick="openSchedModal('${room.id}')" title="Click to view 30-day schedule" style="cursor:pointer">
         <div>
           <div class="room-name">${escHtml(room.name)}${pendingTag}</div>
-          <div class="room-floor">${escHtml(room.floor)}</div>
+          <div class="room-floor">${escHtml(room.floor)}${roomBadgesHtml(room)}</div>
         </div>
         <span class="status-badge ${badgeClass}">${badgeText}</span>
       </div>
@@ -902,6 +927,15 @@ function populateRoomSelects() {
   }
 }
 
+function updateFCapacityHint() {
+  const roomId = document.getElementById('f-room').value;
+  const hint = document.getElementById('f-capacity-hint');
+  if (!hint) return;
+  const room = ROOMS.find(r => r.id === roomId);
+  hint.innerHTML = roomBadgesHtml(room);
+  hint.style.display = room && (room.capacity || room.equipment) ? 'block' : 'none';
+}
+
 function resetForm() {
   document.getElementById('booking-form').reset();
   document.getElementById('edit-id').value = '';
@@ -917,6 +951,7 @@ function resetForm() {
   const dateLabelEl = document.querySelector('label[for="f-date"]') || document.getElementById('f-date').previousElementSibling;
   if (dateLabelEl) dateLabelEl.textContent = 'Start Date';
   if (document.getElementById('edit-id').dataset) delete document.getElementById('edit-id').dataset.fromRequest;
+  updateFCapacityHint();
 }
 
 function editBooking(id) {
@@ -924,6 +959,7 @@ function editBooking(id) {
   if (!b) return;
   document.getElementById('edit-id').value = b.id;
   document.getElementById('f-room').value = b.room;
+  updateFCapacityHint();
   document.getElementById('f-booker').value = b.booker;
   document.getElementById('f-purpose').value = displayPurpose(b.purpose) || '';
   document.getElementById('f-date').value = b.date;
@@ -1285,7 +1321,7 @@ function updateReqCapacityHint() {
   if (!hint) return;
   const room = ROOMS.find(r => r.id === roomId);
   if (room && room.capacity) {
-    hint.textContent = `Seats up to ${room.capacity} people.` + (room.equipment ? ` Has ${room.equipment}.` : '');
+    hint.innerHTML = roomBadgesHtml(room);
     hint.style.display = 'block';
   } else {
     hint.style.display = 'none';
@@ -1875,7 +1911,7 @@ async function init() {
 function openSchedModal(roomId) {
   const room = ROOMS.find(r => r.id === roomId);
   if (!room) return;
-  document.getElementById('sched-modal-room').textContent = room.name + ' — ' + room.floor;
+  document.getElementById('sched-modal-room').innerHTML = escHtml(room.name + ' — ' + room.floor) + roomBadgesHtml(room);
   const body = document.getElementById('sched-modal-body');
 
   const today = new Date();

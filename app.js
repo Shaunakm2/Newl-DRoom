@@ -1,15 +1,15 @@
 // ===== CONFIGURATION =====
 const ROOMS = [
-  { id: 'brihaspati',  name: 'Brihaspati',               floor: '2nd Floor', color: '#7B6FDF', colorLight: '#FAFAFE' },
-  { id: 'vedvyas',     name: 'Vedvyas',                   floor: '2nd Floor', color: '#2E9E6B', colorLight: '#F8FDFB' },
-  { id: 'conf2f',      name: '2nd Floor Conference Room', floor: '2nd Floor', color: '#3A8FC7', colorLight: '#F8FBFE' },
-  { id: 'parashurama', name: 'Parashurama',               floor: '4th Floor', color: '#D4631A', colorLight: '#FEFAF7' },
-  { id: 'pingala',     name: 'Pingala',                   floor: '4th Floor', color: '#B8860B', colorLight: '#FEFDF7' },
-  { id: 'chanakya',    name: 'Chanakya',                  floor: '4th Floor', color: '#8E44AD', colorLight: '#FDF9FF' },
-  { id: 'bhardwaja',   name: 'Bhardwaja',                 floor: '4th Floor', color: '#1A9B94', colorLight: '#F7FEFE' },
-  { id: 'vishwamitra', name: 'Vishwamitra',               floor: '2nd Floor', color: '#C0395A', colorLight: '#FFF8FA' },
-  { id: 'vasistha',    name: 'Vasistha',                  floor: '2nd Floor', color: '#2471A3', colorLight: '#F7FBFE' },
-  { id: 'sharada',     name: 'Sharada',                   floor: '2nd Floor', color: '#5D8A27', colorLight: '#F8FCF4' },
+  { id: 'brihaspati',  name: 'Brihaspati',               floor: '2nd Floor', color: '#7B6FDF', colorLight: '#FAFAFE', capacity: 30, equipment: 'Projector' },
+  { id: 'vedvyas',     name: 'Vedvyas',                   floor: '2nd Floor', color: '#2E9E6B', colorLight: '#F8FDFB', capacity: 30, equipment: 'Projector' },
+  { id: 'conf2f',      name: '2nd Floor Conference Room', floor: '2nd Floor', color: '#3A8FC7', colorLight: '#F8FBFE', capacity: 5,  equipment: 'Projector' },
+  { id: 'parashurama', name: 'Parashurama',               floor: '4th Floor', color: '#D4631A', colorLight: '#FEFAF7', capacity: 30, equipment: 'Interactive Panel' },
+  { id: 'pingala',     name: 'Pingala',                   floor: '4th Floor', color: '#B8860B', colorLight: '#FEFDF7', capacity: 30, equipment: 'Interactive Panel' },
+  { id: 'chanakya',    name: 'Chanakya',                  floor: '4th Floor', color: '#8E44AD', colorLight: '#FDF9FF', capacity: 45, equipment: 'Interactive Panel' },
+  { id: 'bhardwaja',   name: 'Bhardwaja',                 floor: '4th Floor', color: '#1A9B94', colorLight: '#F7FEFE', capacity: 30, equipment: 'TV' },
+  { id: 'vishwamitra', name: 'Vishwamitra',               floor: '2nd Floor', color: '#C0395A', colorLight: '#FFF8FA', capacity: 30, equipment: 'Projector' },
+  { id: 'vasistha',    name: 'Vasistha',                  floor: '2nd Floor', color: '#2471A3', colorLight: '#F7FBFE', capacity: 30, equipment: 'Projector' },
+  { id: 'sharada',     name: 'Sharada',                   floor: '2nd Floor', color: '#5D8A27', colorLight: '#F8FCF4', capacity: 30, equipment: 'Projector' },
 ];
 
 // ===== STATE =====
@@ -54,8 +54,8 @@ setInterval(() => {
 }, 60000); // check every minute
 let _tablePage = 0;
 let _tablePageLocked = false;
-let _sortField = 'datetime'; // 'datetime' | 'room' | 'booker' | 'status'
-let _sortDir = 'desc'; // 'asc' | 'desc'
+let _sortField = 'bookingdate'; // 'bookingdate' | 'datetime' | 'room' | 'booker' | 'status'
+let _sortDir = 'asc'; // 'asc' | 'desc'
 const PAGE_SIZE = 15; // bookings per page in admin table
 
 // ===== STORAGE (Supabase) =====
@@ -707,7 +707,10 @@ function getFilteredBookings() {
 
   filtered.sort((a, b) => {
     let va, vb;
-    if (_sortField === 'room') {
+    if (_sortField === 'bookingdate') {
+      va = a.date + (a.start || '00:00');
+      vb = b.date + (b.start || '00:00');
+    } else if (_sortField === 'room') {
       va = roomName(a.room).toLowerCase();
       vb = roomName(b.room).toLowerCase();
     } else if (_sortField === 'status') {
@@ -1014,6 +1017,15 @@ async function submitBooking(e) {
   if (isRecurring && dateEnd < date) {
     showError('End date must be on or after start date.'); return;
   }
+  const selectedRoomAdmin = ROOMS.find(r => r.id === room);
+  if (selectedRoomAdmin && selectedRoomAdmin.capacity && Number(attendees) > selectedRoomAdmin.capacity) {
+    const proceedAnyway = await showConfirmModal(
+      `${selectedRoomAdmin.name} holds up to ${selectedRoomAdmin.capacity} people, but this booking has ${attendees} attendees. Book anyway?`,
+      'Book Anyway',
+      'btn-approve'
+    );
+    if (!proceedAnyway) return;
+  }
 
   const dates = isRecurring ? getWeekdays(date, dateEnd) : [date];
   if (dates.length === 0) { showError('No weekdays found in selected range.'); return; }
@@ -1267,12 +1279,26 @@ function escHtml(s) {
 let reqSubmitting = false;
 let rejectTargetId = null;
 
+function updateReqCapacityHint() {
+  const roomId = document.getElementById('req-room').value;
+  const hint = document.getElementById('req-capacity-hint');
+  if (!hint) return;
+  const room = ROOMS.find(r => r.id === roomId);
+  if (room && room.capacity) {
+    hint.textContent = `Seats up to ${room.capacity} people.` + (room.equipment ? ` Has ${room.equipment}.` : '');
+    hint.style.display = 'block';
+  } else {
+    hint.style.display = 'none';
+  }
+}
+
 function openRequestModal(roomId) {
   // Populate room select
   const sel = document.getElementById('req-room');
   sel.innerHTML = '<option value="">Select a room...</option>';
   for (const r of ROOMS) sel.innerHTML += `<option value="${r.id}">${r.name} (${r.floor})</option>`;
   if (roomId) sel.value = roomId;
+  updateReqCapacityHint();
 
   document.getElementById('req-date').value = todayStr();
   document.getElementById('req-error').textContent = '';
@@ -1336,6 +1362,11 @@ async function submitRequest() {
   }
   if (isRecurring && dateEnd < date) {
     errEl.textContent = 'End date must be on or after start date.';
+    errEl.classList.add('visible'); return;
+  }
+  const selectedRoom = ROOMS.find(r => r.id === room);
+  if (selectedRoom && selectedRoom.capacity && Number(attendees) > selectedRoom.capacity) {
+    errEl.textContent = `${selectedRoom.name} holds up to ${selectedRoom.capacity} people — you entered ${attendees}. Please pick a larger room or reduce attendees.`;
     errEl.classList.add('visible'); return;
   }
   errEl.classList.remove('visible');

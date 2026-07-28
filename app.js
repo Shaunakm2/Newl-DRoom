@@ -239,7 +239,7 @@ function equipmentIconSvg(equipment) {
     return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></svg>';
   }
   if (equipment === 'Projector') {
-    return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="13" height="10" rx="2"/><circle cx="8.5" cy="12" r="2.3"/><path d="M15 10.5l6-3.5v10l-6-3.5"/></svg>';
+    return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="8" width="13" height="8" rx="2"/><circle cx="8.5" cy="12" r="2.4"/><path d="M17 8.5l4-2M17 12h5M17 15.5l4 2"/></svg>';
   }
   if (equipment === 'Interactive Panel') {
     return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><circle cx="17" cy="10" r="1.1" fill="currentColor" stroke="none"/></svg>';
@@ -657,7 +657,7 @@ function renderStatusGrid() {
         ? `Free until ${fmtTime(nextToday.start)}`
         : hasAnyBookingToday
           ? 'Free for the rest of today'
-          : 'Free all day' + (isSleepy ? ' 💤' : '');
+          : 'Free all day' + (isSleepy ? ' <span class="zzz-badge" title="No bookings today">Zzz</span>' : '');
       bodyHtml += `<div class="room-info-row" style="color:var(--text);font-weight:500;">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
         <span>${freeUntilText}</span>

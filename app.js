@@ -258,6 +258,24 @@ function roomBadgesHtml(room, size) {
   return `<span class="room-badges">${capHtml}${eqHtml}</span>`;
 }
 
+// ===== TEAMS NOTIFICATIONS =====
+// Fire-and-forget: never awaited by the caller, wrapped in its own try/catch,
+// so a Teams outage or misconfiguration can NEVER break an actual booking
+// action. Errors only ever show up in this function's own Supabase logs.
+const TEAMS_NOTIFY_URL = 'https://xgrwmwibfkuxzkuuidsh.supabase.co/functions/v1/teams-notify';
+
+function notifyTeams(payload) {
+  fetch(TEAMS_NOTIFY_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + SUPABASE_PUBLISHABLE_KEY,
+      'apikey': SUPABASE_PUBLISHABLE_KEY,
+    },
+    body: JSON.stringify(payload),
+  }).catch(err => console.error('notifyTeams failed:', err));
+}
+
 function genId() {
   const ts = Date.now().toString(36);
   const rand = Array.from(crypto.getRandomValues(new Uint8Array(10)))
@@ -1448,6 +1466,13 @@ async function submitRequest() {
     document.getElementById('req-confirm-view').style.display = '';
     reqSubmitting = false;
 
+    notifyTeams({
+      event: isRecurring ? 'newRecurringRequest' : 'newRequest',
+      room: roomName(room), bookedBy: booker, purpose,
+      date, dateRange: isRecurring ? `${fmtDate(date)}–${fmtDate(dateEnd)}` : undefined,
+      start: fmtTime(start), end: fmtTime(end),
+    });
+
     // Show conflict notice on confirmation screen if overlaps detected
     const noticeEl = document.getElementById('req-conflict-notice');
     if (hasConflict && noticeEl) {
@@ -1574,6 +1599,7 @@ async function approvePending(id) {
     bookings[idx].status = 'Confirmed';
     await apiUpdateStatus(id, 'Confirmed');
     toast('Booking approved ✅');
+    notifyTeams({ event: 'approved', room: roomName(b.room), bookedBy: b.booker, purpose: b.purpose, date: b.date, start: fmtTime(b.start), end: fmtTime(b.end) });
   } catch(e) { toast('Error approving booking.', true); }
   finally { showLoadingOverlay(false); }
   renderPendingRequests(); renderTable(); renderStatusGrid(); updatePendingDot();
@@ -1598,6 +1624,7 @@ async function modifyAndApprove(id) {
     bookings[idx] = b;
     await apiUpdate(b);
     toast('Booking modified & approved ✅');
+    notifyTeams({ event: 'approved', room: roomName(b.room), bookedBy: b.booker, purpose: b.purpose, date: b.date, start: fmtTime(b.start), end: fmtTime(b.end) });
   } catch(e) { toast('Error updating booking.', true); }
   finally { showLoadingOverlay(false); }
   renderPendingRequests(); renderTable(); renderStatusGrid(); updatePendingDot();
@@ -1616,12 +1643,14 @@ async function confirmReject() {
   if (!rejectTargetId) return;
   const id = rejectTargetId; rejectTargetId = null;
   document.getElementById('reject-modal').style.display = 'none';
+  const b = bookings.find(x => x.id === id);
   try {
     showLoadingOverlay(true);
     const idx = bookings.findIndex(b => b.id === id);
     if (idx !== -1) bookings[idx].status = 'Rejected';
     await apiUpdateStatus(id, 'Rejected');
     toast('Request rejected.');
+    if (b) notifyTeams({ event: 'deletedOrRejected', room: roomName(b.room), bookedBy: b.booker, purpose: b.purpose, date: b.date, start: fmtTime(b.start), end: fmtTime(b.end) });
   } catch(e) { toast('Error rejecting request.', true); }
   finally { showLoadingOverlay(false); }
   renderPendingRequests(); renderTable(); renderStatusGrid(); updatePendingDot();
@@ -1682,6 +1711,7 @@ async function bulkApprovePending() {
     let msg = `${toApprove.length} request(s) approved ✅`;
     if (conflicted > 0) msg += ` — ${conflicted} skipped due to conflicts.`;
     toast(msg);
+    if (toApprove.length > 0) notifyTeams({ event: 'batchApproved', count: toApprove.length });
   } catch(e) { toast('Error during bulk approve.', true); }
   finally { showLoadingOverlay(false); }
   renderPendingRequests(); renderTable(); renderStatusGrid(); updatePendingDot();
@@ -1697,8 +1727,10 @@ async function bulkRejectPending() {
     for (const id of ids) {
       const idx = bookings.findIndex(b => b.id === id);
       if (idx !== -1) {
+        const b = bookings[idx];
         bookings[idx].status = 'Rejected';
         await apiUpdateStatus(id, 'Rejected');
+        notifyTeams({ event: 'deletedOrRejected', room: roomName(b.room), bookedBy: b.booker, purpose: b.purpose, date: b.date, start: fmtTime(b.start), end: fmtTime(b.end) });
         rejected++;
       }
     }
@@ -1759,6 +1791,7 @@ async function bulkApprove() {
     });
     await apiUpdateStatusBatch(ids, 'Confirmed');
     toast(`${ids.length} booking(s) approved.`);
+    notifyTeams({ event: 'batchApproved', count: ids.length });
   } catch(e) { toast('Error during bulk approve.', true); }
   finally { showLoadingOverlay(false); }
   renderPendingRequests(); renderTable(); renderStatusGrid(); updatePendingDot();

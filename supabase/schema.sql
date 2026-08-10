@@ -129,3 +129,87 @@ $$;
 -- 5. REALTIME (optional but recommended) -----------------------------
 -- Lets the frontend subscribe to live changes instead of polling.
 alter publication supabase_realtime add table public.bookings;
+
+-- 6. RATE LIMITING -----------------------------------------------------
+-- Applied live via SQL Editor earlier; added here so this file matches
+-- the actual deployed database (was previously undocumented drift).
+-- Limits: 5 booking inserts/min for authenticated admin, 2/min for
+-- anonymous public requests (keyed by the name typed into the form —
+-- not spoof-proof, but deters accidental spam/double-submits).
+create table if not exists public.booking_rate_log (
+  id         bigint generated always as identity primary key,
+  actor      text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_rate_log_actor_time
+  on public.booking_rate_log (actor, created_at);
+alter table public.booking_rate_log enable row level security;
+-- No policies granted to anon/authenticated — only the SECURITY DEFINER
+-- trigger below touches this table.
+
+create or replace function public.enforce_booking_rate_limit()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_actor      text;
+  v_limit      integer;
+  v_recent_cnt integer;
+begin
+  if auth.role() = 'authenticated' then
+    v_actor := 'auth:' || auth.uid()::text;
+    v_limit := 5;
+  else
+    v_actor := 'name:' || lower(trim(new.booked_by));
+    v_limit := 2;
+  end if;
+
+  delete from public.booking_rate_log where created_at < now() - interval '2 minutes';
+
+  select count(*) into v_recent_cnt
+  from public.booking_rate_log
+  where actor = v_actor and created_at > now() - interval '60 seconds';
+
+  if v_recent_cnt >= v_limit then
+    raise exception 'Rate limit exceeded: max % booking(s) per minute. Please wait a moment and try again.', v_limit
+      using errcode = 'P0001';
+  end if;
+
+  insert into public.booking_rate_log (actor) values (v_actor);
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_enforce_booking_rate_limit on public.bookings;
+create trigger trg_enforce_booking_rate_limit
+  before insert on public.bookings
+  for each row
+  execute function public.enforce_booking_rate_limit();
+
+-- 7. ROOM CAPACITY ENFORCEMENT ------------------------------------------
+-- Applied live via SQL Editor earlier; added here for the same reason
+-- as section 6 — matches per-room seat counts used in app.js's ROOMS
+-- array (Chanakya 45, 2nd Floor Conference Room 5, all others 30).
+create or replace function public.enforce_room_capacity()
+returns trigger language plpgsql as $$
+declare
+  v_cap integer;
+begin
+  v_cap := case new.room
+    when 'chanakya' then 45
+    when 'conf2f' then 5
+    else 30
+  end;
+  if new.attendees is not null and new.attendees > v_cap then
+    raise exception 'Room % holds up to % people (got %).', new.room, v_cap, new.attendees;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_enforce_room_capacity on public.bookings;
+create trigger trg_enforce_room_capacity
+  before insert or update on public.bookings
+  for each row execute function public.enforce_room_capacity();

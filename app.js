@@ -2238,6 +2238,7 @@ async function confirmCancelOrRelease() {
       b.endDate = todayStr();
       closeCancelModal();
       toast('Room released — now available.');
+      notifyTeams({ event: 'releasedBySelf', room: roomName(b.room), bookedBy: b.booker, purpose: b.purpose, date: b.date, start: fmtTime(b.start), end: fmtTime(nowHHMM) });
     } else {
       // Mark as Cancelled — server re-verifies the name match, keeps record
       await apiCancelOwn(_cancelBookingId, entered);
@@ -2246,6 +2247,7 @@ async function confirmCancelOrRelease() {
       closeCancelModal();
       closeSchedModal();
       toast('Booking cancelled successfully.');
+      notifyTeams({ event: 'cancelledBySelf', room: roomName(b.room), bookedBy: b.booker, purpose: b.purpose, date: b.date, start: fmtTime(b.start), end: fmtTime(b.end) });
     }
     renderStatusGrid();
     updatePendingDot();

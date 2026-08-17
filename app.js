@@ -1331,6 +1331,7 @@ function escHtml(s) {
 
 // ===== REQUEST BOOKING (Public) =====
 let reqSubmitting = false;
+let _reqOpenedAt = 0; // bot-deterrence: timestamp when the request modal opened
 let rejectTargetId = null;
 
 function updateReqCapacityHint() {
@@ -1347,6 +1348,7 @@ function updateReqCapacityHint() {
 }
 
 function openRequestModal(roomId) {
+  _reqOpenedAt = Date.now(); // bot check: no human fills this form in under ~2s
   // Populate room select
   const sel = document.getElementById('req-room');
   sel.innerHTML = '<option value="">Select a room...</option>';
@@ -1391,6 +1393,18 @@ function validateReqTimes() {
 }
 
 async function submitRequest() {
+  // Bot deterrence: a filled honeypot, or a submission completed suspiciously
+  // fast, silently "succeeds" from the caller's perspective without actually
+  // creating a booking — showing an error here would teach a bot exactly
+  // what tripped it and how to route around it next time.
+  const honeypotFilled = document.getElementById('req-website')?.value;
+  const tooFast = _reqOpenedAt && (Date.now() - _reqOpenedAt) < 2000;
+  if (honeypotFilled || tooFast) {
+    document.getElementById('req-form-view').style.display = 'none';
+    document.getElementById('req-confirm-view').style.display = '';
+    return;
+  }
+
   const room = document.getElementById('req-room').value;
   const booker = document.getElementById('req-booker').value.trim();
   const purpose = document.getElementById('req-purpose').value.trim();

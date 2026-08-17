@@ -1221,12 +1221,22 @@ async function doLogin() {
   const pw = document.getElementById('login-pw').value;
   if (!pw) return;
 
-  // Rate limiting
-  if (Date.now() < _loginLockedUntil) {
-    const remaining = Math.ceil((_loginLockedUntil - Date.now()) / 1000);
-    document.getElementById('login-error').textContent = `Too many attempts. Try again in ${remaining}s.`;
-    document.getElementById('login-error').classList.add('visible');
-    return;
+  // Real, server-enforced rate limiting — this RPC call must succeed before
+  // we're even allowed to attempt the actual sign-in. Unlike the old
+  // client-side-only counter (trivially bypassed by refreshing the page),
+  // this lives in Postgres and can't be reset by the browser.
+  try {
+    const { data: rl, error: rlErr } = await supabase.rpc('check_login_rate_limit');
+    if (!rlErr && rl && rl.ok === false) {
+      document.getElementById('login-error').textContent = `Too many attempts. Try again in ${rl.retry_after_seconds}s.`;
+      document.getElementById('login-error').classList.add('visible');
+      return;
+    }
+  } catch (e) {
+    // If the rate-limit check itself fails (network issue etc), fail safe
+    // by still allowing the attempt — never let an outage lock out the
+    // legitimate admin. The real sign-in call below still requires the
+    // correct password regardless.
   }
 
   try {

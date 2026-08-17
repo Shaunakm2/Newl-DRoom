@@ -15,7 +15,7 @@
 <meta name="apple-mobile-web-app-title" content="IMS L&D Rooms">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <link rel="stylesheet" href="style.css">
 </head>
@@ -269,6 +269,13 @@
     <div id="req-form-view">
       <div class="modal-title">Request a Booking</div>
       <div class="modal-sub" id="req-modal-sub">Fill in your details and an admin will confirm your booking.</div>
+      <!-- Honeypot: invisible to real users (off-screen + aria-hidden), but a
+           bot filling every field blindly will trip it. Never shown, never
+           required for real submissions. -->
+      <div style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden;" aria-hidden="true">
+        <label for="req-website">Website</label>
+        <input type="text" id="req-website" name="website" tabindex="-1" autocomplete="off">
+      </div>
       <div class="form-group">
         <label>Room</label>
         <select id="req-room" required onchange="updateReqCapacityHint()">

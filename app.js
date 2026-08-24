@@ -1402,6 +1402,23 @@ function validateReqTimes() {
   }
 }
 
+function showRequestSuccess(newIds, conflictInfo) {
+  document.getElementById('req-form-view').style.display = 'none';
+  document.getElementById('req-confirm-view').style.display = '';
+  reqSubmitting = false;
+
+  const noticeEl = document.getElementById('req-conflict-notice');
+  if (conflictInfo && noticeEl) {
+    noticeEl.style.display = '';
+    noticeEl.innerHTML = conflictInfo;
+  } else if (noticeEl) {
+    noticeEl.style.display = 'none';
+  }
+
+  launchConfetti();
+  updatePendingDot();
+}
+
 async function submitRequest() {
   // Bot deterrence: a filled honeypot, or a submission completed suspiciously
   // fast, silently "succeeds" from the caller's perspective without actually
@@ -1462,20 +1479,30 @@ async function submitRequest() {
     errEl.classList.add('visible'); return;
   }
 
-  // Conflict check — used only for the one-time confirmation notice shown to
-  // the requester right after submitting. NOT stored anywhere — admin views
-  // compute conflicts live at render time instead (see renderPendingRequests /
-  // renderTable), so the warning always reflects current reality and
-  // automatically disappears once the conflicting booking is deleted/cancelled,
-  // rather than being frozen as stale text forever.
+  // Conflict check — done BEFORE submitting anything, so a requester with
+  // conflicts on some days gets a chance to pick an alternate room for
+  // those specific days rather than finding out only after the fact.
   const conflictByDate = {};
   for (const d of dates) {
     const conflicts = findAllConflicts(room, d, start, end, null);
     if (conflicts.length > 0) conflictByDate[d] = conflicts;
   }
   const conflictDates = Object.keys(conflictByDate);
-  const hasConflict = conflictDates.length > 0;
-  const totalConflictCount = conflictDates.reduce((sum, d) => sum + conflictByDate[d].length, 0);
+
+  if (conflictDates.length > 0) {
+    // Some days conflict — hand off to the picker instead of submitting
+    // blind. Reuses the same alternate-room-picker modal the admin side
+    // uses, just configured to submit as Pending requests in one batch.
+    const cleanDates = dates.filter(d => !conflictByDate[d]);
+    const conflictDateObjs = conflictDates.map(d => ({ date: d, conflict: conflictByDate[d][0] }));
+    document.getElementById('request-modal').style.display = 'none';
+    openConflictModal({
+      room, booker, purpose, start, end, attendees,
+      cleanDates, conflictDates: conflictDateObjs,
+      status: 'Pending', isPublic: true, isRecurring,
+    });
+    return;
+  }
 
   try {
     showLoadingOverlay(true);
@@ -1486,9 +1513,6 @@ async function submitRequest() {
     });
     await apiCreateRequestBatch(newBookings);
     newBookings.forEach(b => bookings.push(b));
-    document.getElementById('req-form-view').style.display = 'none';
-    document.getElementById('req-confirm-view').style.display = '';
-    reqSubmitting = false;
 
     notifyTeams({
       event: isRecurring ? 'newRecurringRequest' : 'newRequest',
@@ -1497,22 +1521,7 @@ async function submitRequest() {
       start: fmtTime(start), end: fmtTime(end),
     });
 
-    // Show conflict notice on confirmation screen if overlaps detected
-    const noticeEl = document.getElementById('req-conflict-notice');
-    if (hasConflict && noticeEl) {
-      const firstDate = conflictDates[0];
-      const first = conflictByDate[firstDate][0];
-      const isPending = first.status === 'Pending';
-      const statusLabel = isPending ? 'a pending request' : 'a confirmed booking';
-      const dayCountNote = conflictDates.length > 1 ? ` — ${conflictDates.length} of ${dates.length} days affected (${totalConflictCount} overlapping booking(s) total)` : (totalConflictCount > 1 ? ` — ${totalConflictCount} overlapping bookings that day` : '');
-      noticeEl.style.display = '';
-      noticeEl.innerHTML = `⚠️ <strong>Note:</strong> ${roomName(room)} already has ${statusLabel} from ${fmtTime(first.start)}–${fmtTime(first.end)} on ${fmtDate(conflictDates[0])} by ${escHtml(first.booker)}${dayCountNote}. Your request has been submitted — please check with the admin for confirmation.`;
-    } else if (noticeEl) {
-      noticeEl.style.display = 'none';
-    }
-
-    launchConfetti();
-    updatePendingDot();
+    showRequestSuccess(newBookings.map(b => b.id), null);
   } catch(e) {
     errEl.textContent = 'Error submitting request. Please try again.';
     errEl.classList.add('visible');
@@ -2056,8 +2065,9 @@ function openConflictModal(session) {
   session.conflictDates.forEach(cd => { session.resolutions[cd.date] = null; });
 
   const totalDates = session.cleanDates.length + session.conflictDates.length;
+  const verb = session.isPublic ? 'requested' : 'have conflicts';
   document.getElementById('conflict-modal-desc').textContent =
-    `${session.conflictDates.length} of ${totalDates} date(s) have conflicts. Choose an alternative room or skip each date.`;
+    `${session.conflictDates.length} of ${totalDates} date(s) are already ${verb}. Choose an alternative room or skip each date.`;
 
   renderConflictModal();
   document.getElementById('conflict-modal').style.display = 'flex';
@@ -2069,8 +2079,9 @@ function renderConflictModal() {
 
   // Show clean dates summary
   if (s.cleanDates.length > 0) {
+    const verb = s.isPublic ? 'requested' : 'booked';
     html += `<div style="margin-bottom:1rem;padding:10px 12px;background:var(--ok-light);border-radius:var(--radius);font-size:13px;color:var(--ok);">
-      <strong>✅ ${s.cleanDates.length} date(s) will be booked in ${roomName(s.room)}:</strong>
+      <strong>✅ ${s.cleanDates.length} date(s) will be ${verb} in ${roomName(s.room)}:</strong>
       <div style="margin-top:4px;color:var(--text-muted)">${s.cleanDates.map(d => fmtDate(d)).join(' · ')}</div>
     </div>`;
   }
@@ -2120,6 +2131,9 @@ function selectAlt(date, roomId) {
 
 function closeConflictModal() {
   document.getElementById('conflict-modal').style.display = 'none';
+  if (_conflictSession && _conflictSession.isPublic) {
+    document.getElementById('request-modal').style.display = 'flex';
+  }
   _conflictSession = null;
 }
 
@@ -2133,6 +2147,58 @@ async function confirmConflictResolution() {
   }
 
   document.getElementById('conflict-modal').style.display = 'none';
+
+  if (s.isPublic) {
+    // Public requester flow — submit everything as ONE Pending batch,
+    // same as the no-conflict fast path does, then show the normal
+    // success screen instead of the admin's toast-based flow.
+    try {
+      showLoadingOverlay(true);
+      const newBookings = [];
+      for (const d of s.cleanDates) {
+        const computedEndDate = minutesSinceMidnight(s.end) < minutesSinceMidnight(s.start) ? addDaysStr(d, 1) : d;
+        newBookings.push({ id: genId(), room: s.room, booker: s.booker, purpose: s.purpose, date: d, start: s.start, end: s.end, attendees: s.attendees || '', status: 'Pending', endDate: computedEndDate });
+      }
+      for (const cd of s.conflictDates) {
+        const chosenRoom = s.resolutions[cd.date];
+        if (chosenRoom === 'skip') continue;
+        const computedEndDate = minutesSinceMidnight(s.end) < minutesSinceMidnight(s.start) ? addDaysStr(cd.date, 1) : cd.date;
+        newBookings.push({ id: genId(), room: chosenRoom, booker: s.booker, purpose: s.purpose, date: cd.date, start: s.start, end: s.end, attendees: s.attendees || '', status: 'Pending', endDate: computedEndDate });
+      }
+      if (newBookings.length > 0) {
+        await apiCreateRequestBatch(newBookings);
+        newBookings.forEach(b => bookings.push(b));
+      }
+
+      const skipped = s.conflictDates.filter(cd => s.resolutions[cd.date] === 'skip').length;
+      const movedCount = s.conflictDates.filter(cd => s.resolutions[cd.date] !== 'skip').length;
+      let info = null;
+      if (movedCount > 0 || skipped > 0) {
+        const parts = [];
+        if (movedCount > 0) parts.push(`${movedCount} day(s) requested in an alternate room`);
+        if (skipped > 0) parts.push(`${skipped} day(s) skipped (no rooms free)`);
+        info = `ℹ️ <strong>Note:</strong> ${parts.join(', ')}. Your requests have been submitted — please check with the admin for confirmation.`;
+      }
+
+      notifyTeams({
+        event: s.isRecurring ? 'newRecurringRequest' : 'newRequest',
+        room: roomName(s.room), bookedBy: s.booker, purpose: s.purpose,
+        date: s.cleanDates[0] || s.conflictDates[0]?.date, start: fmtTime(s.start), end: fmtTime(s.end),
+      });
+
+      document.getElementById('request-modal').style.display = 'flex';
+      showRequestSuccess(newBookings.map(b => b.id), info);
+    } catch(err) {
+      document.getElementById('request-modal').style.display = 'flex';
+      const errEl = document.getElementById('req-error');
+      errEl.textContent = 'Error submitting request. Please try again.';
+      errEl.classList.add('visible');
+    } finally {
+      showLoadingOverlay(false);
+    }
+    _conflictSession = null;
+    return;
+  }
 
   try {
     showLoadingOverlay(true);

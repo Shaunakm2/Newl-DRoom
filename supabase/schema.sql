@@ -40,7 +40,11 @@ create policy "Public can view bookings"
 -- (Confirmed bookings are only ever created by a logged-in admin.)
 create policy "Public can create pending requests"
   on public.bookings for insert
-  with check (status = 'Pending');
+  with check (
+    status = 'Pending'
+    and conflict_resolved = false
+    and (conflict_note is null or conflict_note = '')
+  );
 
 -- Only logged-in admins (Supabase Auth session) can insert Confirmed bookings,
 -- update anything, or delete anything.
@@ -213,3 +217,63 @@ drop trigger if exists trg_enforce_room_capacity on public.bookings;
 create trigger trg_enforce_room_capacity
   before insert or update on public.bookings
   for each row execute function public.enforce_room_capacity();
+
+-- 8. LOGIN RATE LIMITING -------------------------------------------------
+-- Fix for #11: the app previously only had a CLIENT-SIDE attempt counter
+-- (plain JS variables) — trivially bypassed by refreshing the page or
+-- calling supabase.auth.signInWithPassword() directly. This moves real
+-- enforcement server-side, same pattern as the booking rate limiter above.
+--
+-- Note: Supabase's own dashboard "Rate limit for sign-ups and sign-ins"
+-- setting is currently unreliably enforced (known issue, not fixed by
+-- Supabase as of this writing) — don't rely on that alone. Also worth
+-- turning it on anyway as free defense-in-depth, it just isn't sufficient
+-- by itself.
+--
+-- Honest limitation: this gates the login attempt made THROUGH THIS APP's
+-- own UI flow. It does not and cannot block someone who bypasses app.js
+-- entirely and calls Supabase's raw Auth API directly with your anon key
+-- and the admin email — that would need Cloudflare/WAF-style protection
+-- in front of the whole domain, which was explicitly declined for now.
+-- This is a disclosed, accepted tradeoff, same as the cancel/release
+-- name-verification gap documented above.
+
+create table if not exists public.login_attempt_log (
+  id         bigint generated always as identity primary key,
+  created_at timestamptz not null default now()
+);
+alter table public.login_attempt_log enable row level security;
+-- No policies granted to anon/authenticated — only the SECURITY DEFINER
+-- function below touches this table.
+
+create or replace function public.check_login_rate_limit()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_recent_cnt   integer;
+  v_limit        integer := 10;                 -- max attempts per window
+  v_window       interval := interval '5 minutes';
+  v_oldest       timestamptz;
+begin
+  delete from public.login_attempt_log where created_at < now() - interval '30 minutes';
+
+  select count(*), min(created_at) into v_recent_cnt, v_oldest
+  from public.login_attempt_log
+  where created_at > now() - v_window;
+
+  if v_recent_cnt >= v_limit then
+    return jsonb_build_object(
+      'ok', false,
+      'retry_after_seconds', greatest(1, extract(epoch from (v_oldest + v_window - now()))::int)
+    );
+  end if;
+
+  insert into public.login_attempt_log default values;
+  return jsonb_build_object('ok', true);
+end;
+$$;
+
+grant execute on function public.check_login_rate_limit() to anon, authenticated;

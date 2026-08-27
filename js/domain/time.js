@@ -71,3 +71,21 @@ export function bookingSpans(b) {
   if (e > 0) spans.push({ date: addDaysStr(b.date, 1), start: 0, end: e });
   return spans;
 }
+
+// ============================================================
+
+export function getWeekdays(startStr, endStr) {
+  const dates = [];
+  const start = new Date(startStr + 'T00:00:00');
+  const end = new Date(endStr + 'T00:00:00');
+  if (end < start) return dates;
+  const cur = new Date(start);
+  while (cur <= end) {
+    const day = cur.getDay();
+    if (day !== 0 && day !== 6) {
+      dates.push(localDateStr(cur));
+    }
+    cur.setDate(cur.getDate() + 1);
+  }
+  return dates;
+}

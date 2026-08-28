@@ -71,3 +71,20 @@ export function updateClock() {
   const clockEl = document.getElementById('clock');
   if (clockEl) clockEl.textContent = dayNightIcon + ' ' + dateStr + '  ' + pad(hr) + ':' + pad(m) + ':' + pad(s) + ' ' + ap;
 }
+
+let _confirmModalResolve = null;
+export function showConfirmModal(message, confirmLabel, confirmClass) {
+  return new Promise(resolve => {
+    _confirmModalResolve = resolve;
+    document.getElementById('confirm-modal-message').textContent = message;
+    const btn = document.getElementById('confirm-modal-confirm-btn');
+    btn.textContent = confirmLabel || 'Confirm';
+    btn.className = 'btn ' + (confirmClass || 'btn-approve');
+    document.getElementById('confirm-modal').style.display = 'flex';
+  });
+}
+
+export function resolveConfirmModal(result) {
+  document.getElementById('confirm-modal').style.display = 'none';
+  if (_confirmModalResolve) { _confirmModalResolve(result); _confirmModalResolve = null; }
+}

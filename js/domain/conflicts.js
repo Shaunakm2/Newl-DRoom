@@ -52,3 +52,9 @@ export function formatLiveConflictNote(conflicts) {
   if (conflicts.length === 1) return `⚠️ Overlap: ${describeConflict(conflicts[0])}`;
   return `⚠️ ${conflicts.length} overlaps: ` + conflicts.map(describeConflict).join('; ');
 }
+export function getFreeRoomsForDate(date, start, end, excludeRoom) {
+  return ROOMS.filter(r => {
+    if (r.id === excludeRoom) return false;
+    return !findConflict(r.id, date, start, end, null);
+  });
+}

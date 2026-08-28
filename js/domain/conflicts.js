@@ -7,7 +7,7 @@
 import { bookings } from '../state.js';
 import { bookingSpans } from './time.js';
 import { fmtTime, fmtDate } from '../utils/formatting.js';
-
+import { ROOMS } from '../config.js';
 // Returns EVERY overlapping booking for this room/date/time, not just the
 // first one found — a single slot can have more than one conflicting
 // request (e.g. two different pending requests both overlapping the same

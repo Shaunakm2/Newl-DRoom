@@ -3,8 +3,8 @@
 // right renders for whichever page becomes active.
 
 import { renderStatusGrid } from './status-grid.js';
-import { renderTable } from './admin-table.js';
-import { resetForm } from './admin-table.js';
+import { renderTable, renderActiveNow, resetForm } from './admin-table.js';
+import { renderPendingRequests } from './pending-list.js';
 
 export function showPage(name) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));

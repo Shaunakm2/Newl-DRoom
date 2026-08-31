@@ -4,7 +4,6 @@
 
 import { renderStatusGrid } from './status-grid.js';
 import { renderTable } from './admin-table.js';
-import { renderActiveNow, renderPendingRequests } from './pending-list.js';
 import { resetForm } from './admin-table.js';
 
 export function showPage(name) {

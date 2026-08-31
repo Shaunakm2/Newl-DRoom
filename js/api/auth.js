@@ -37,7 +37,7 @@ export async function doLogout() {
 export async function doLogin() {
   const pw = document.getElementById('login-pw').value;
   if (!pw) return;
-
+  console.log('DEBUG pw length:', pw.length, JSON.stringify(pw));
   // Real, server-enforced rate limiting — this RPC call must succeed
   // before we're even allowed to attempt the actual sign-in. Unlike a
   // client-side-only counter (trivially bypassed by refreshing the page),

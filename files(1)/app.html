@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en" data-mode="light" data-accent="amber">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dashboard — L&D Workbench</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/app.css">
+<script>(function(){try{var p=JSON.parse(localStorage.getItem('ldx:prefs'))||{};document.documentElement.dataset.mode=p.mode||'light';document.documentElement.dataset.accent=p.accent||'amber';}catch(e){}
+  if(location.search.indexOf('u=')>-1)return;
+  try{if(!localStorage.getItem('ldx:session'))location.replace('login.html');}catch(e){}})();</script>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap top-in" style="width:min(100% - 2.4rem,100%);padding-inline:1.2rem">
+    <a class="brand" href="app.html"><span class="brand-mark">LD</span> Workbench</a>
+    <nav class="nav">
+      <a href="index.html">Home</a>
+      <div class="tools" id="themeHost"></div>
+      <div class="menu-wrap">
+        <button class="btn btn-sm" id="userBtn" aria-expanded="false"><span id="userName">Account</span> ▾</button>
+        <div class="menu" id="userMenu">
+          <p id="userMeta"></p>
+          <button data-act="reset">Reset demo data</button>
+          <button data-act="logout">Sign out</button>
+        </div>
+      </div>
+    </nav>
+  </div>
+</header>
+
+<div class="shell">
+  <aside class="side">
+    <div class="who">
+      <b id="whoName">—</b>
+      <span id="whoRole">—</span>
+    </div>
+    <nav id="sideNav" aria-label="Modules"></nav>
+  </aside>
+  <main class="main" id="main"></main>
+</div>
+
+<script src="assets/js/store.js"></script>
+<script src="assets/js/app.js"></script>
+</body>
+</html>
